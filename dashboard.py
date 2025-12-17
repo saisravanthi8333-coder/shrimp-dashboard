@@ -186,17 +186,56 @@ def get_risk_color(metric, val, leftover=False):
     return None
 
 # ============================================================
-# 5️⃣ MELT DATA FOR PLOTTING
+# 5️⃣ MELT DATA FOR PLOTTING (Fixed)
 # ============================================================
 metrics_all = ['Salinity', 'pH', 'ScheduledFeed_day_g', 'ActualFeed_day_g', 'DeadCount_day']
 metrics_present = [m for m in metrics_all if m in view_df.columns]
 
 if not view_df.empty and metrics_present:
-    id_vars = ['X_label'] + [c for c in ['Tank', 'Block', 'WorkerName', 'WorkerName_Water'] if c in view_df.columns]
-    df_melt = view_df.melt(id_vars=id_vars, value_vars=metrics_present, var_name='Metric', value_name='Value')
-    for col in ['Tank','Block','WorkerName','WorkerName_Water']:
-        if col in df_melt.columns:
-            df_melt[col] = df_melt[col].astype(str).str.strip()
+    # Ensure required columns exist
+    for col in ['Tank', 'Block', 'WorkerName', 'WorkerName_Water', 'Date']:
+        if col not in view_df.columns:
+            view_df[col] = 'Unknown' if col != 'Date' else pd.NaT
+
+    df_temp = view_df.copy()
+
+    # DAILY view
+    if view_option == "Daily":
+        df_temp["X_label"] = df_temp["Block"].astype(str) + " | " + df_temp["Tank"].astype(str)
+
+    # WEEKLY view
+    elif view_option == "Weekly":
+        # If a specific week is selected
+        if selected_date != "All" and df_temp["Date"].notna().any():
+            wk_start = pd.to_datetime(selected_date.split(" - ")[0])
+            wk_end = pd.to_datetime(selected_date.split(" - ")[1])
+            df_temp = df_temp[(df_temp["Date"] >= wk_start) & (df_temp["Date"] <= wk_end)].copy()
+
+        # Ensure Date is datetime
+        df_temp["Date"] = pd.to_datetime(df_temp["Date"], errors="coerce")
+        
+        # Create X_label safely even if Date is missing
+        df_temp["X_label"] = df_temp.apply(
+            lambda row: (
+                f"{row['Date'].date()} | {row['Block']} | {row['Tank']}"
+                if pd.notna(row['Date']) else f"{row['Block']} | {row['Tank']}"
+            ),
+            axis=1
+        )
+
+    # Melt the dataframe
+    id_vars = ['X_label', 'Tank', 'Block', 'WorkerName', 'WorkerName_Water']
+    df_melt = df_temp.melt(
+        id_vars=id_vars,
+        value_vars=metrics_present,
+        var_name='Metric',
+        value_name='Value'
+    )
+
+    # Clean string columns
+    for col in ['Tank', 'Block', 'WorkerName', 'WorkerName_Water']:
+        df_melt[col] = df_melt[col].astype(str).str.strip()
+
 
 # ============================================================
 # ⭐ DAILY & WEEKLY WATER COMPLIANCE CALCULATION
@@ -246,8 +285,8 @@ with col2:
         <p style="font-size:11px; color:#888; margin-top:4px;">(valid {int(sal_total_count)} readings)</p>
     </div>
     """, unsafe_allow_html=True)
-#------Water quality--------#
 
+#------Water quality--------#
 st.subheader("Water Quality (Salinity & pH)")
 
 metrics = [c for c in ["Salinity", "pH"] if c in view_df.columns]
@@ -266,10 +305,19 @@ if not view_df.empty and metrics:
             wk_start = pd.to_datetime(selected_date.split(" - ")[0])
             wk_end = pd.to_datetime(selected_date.split(" - ")[1])
             df_temp = df_temp[(df_temp["Date"] >= wk_start) & (df_temp["Date"] <= wk_end)].copy()
+        
         # Ensure Date column is datetime
         df_temp["Date"] = pd.to_datetime(df_temp["Date"], errors="coerce")
-        df_temp["X_label"] = df_temp["Date"].dt.date.astype(str) + " | " + df_temp["Block"].astype(str) + " | " + df_temp["Tank"].astype(str)
-    
+
+        # X-axis is date only
+        df_temp["X_label"] = df_temp["Date"].dt.date.astype(str)
+
+    # Ensure required columns exist before melting
+    for col in ["Tank", "Block", "WorkerName_Water"]:
+        if col not in df_temp.columns:
+            df_temp[col] = "Unknown"
+
+    # Melt for plotting
     df_plot = df_temp.melt(
         id_vars=["X_label", "Tank", "Block", "WorkerName_Water"],
         value_vars=metrics,
@@ -277,12 +325,9 @@ if not view_df.empty and metrics:
         value_name="Value"
     )
 
-    # Ensure required columns exist
+    # Clean string columns
     for col in ["Tank", "Block", "WorkerName_Water"]:
-        if col in df_plot.columns:
-            df_plot[col] = df_plot[col].astype(str).str.strip()
-        else:
-            df_plot[col] = "Unknown"
+        df_plot[col] = df_plot[col].astype(str).str.strip()
 
     # Plot
     fig_water = px.line(
@@ -293,7 +338,7 @@ if not view_df.empty and metrics:
         line_dash="Metric",
         markers=True,
         color_discrete_map=tank_colors,
-        labels={"X_label":"Block | Tank", "Value":"Value", "Metric":"Parameter", "Tank":"Tank"},
+        labels={"X_label":"Date", "Value":"Value", "Metric":"Parameter", "Tank":"Tank"},
         hover_data={
             "Tank": True,
             "Block": True,
@@ -321,7 +366,7 @@ if not view_df.empty and metrics:
                 name=color_to_name.get(color, f"Risk ({color})"),
                 customdata=subset[["Tank", "Block", "WorkerName_Water"]].to_numpy(),
                 hovertemplate=(
-                    "Block | Tank: %{x}<br>"
+                    "Date: %{x}<br>"
                     "Metric: %{customdata[2]}<br>"
                     f"{metric}: %{{y}}<br>"
                     "Tank: %{customdata[0]}<br>"
@@ -336,36 +381,49 @@ else:
     st.info("No water quality data available.")
 
 
-#--------Feed trends-----------#
+# ============================================================
+# 7️⃣ FEED TRENDS
+# ============================================================
 st.subheader("Feed Trends")
 
+# Filter feed metrics
 df_feed = df_melt[df_melt['Metric'].isin(['ScheduledFeed_day_g','ActualFeed_day_g'])].copy()
+
+# Fill missing columns
 if 'WorkerName' not in df_feed.columns:
     df_feed['WorkerName'] = 'Unknown'
 for col in ['Tank','Block']:
     if col not in df_feed.columns:
         df_feed[col] = '-'
 
+# Create X_label based on view_option
 if not df_feed.empty:
-    # X-axis as Block | Tank or Date | Block | Tank for weekly
     if view_option == "Daily":
+        # Daily: show Block | Tank on x-axis
         df_feed["X_label"] = df_feed["Block"].astype(str) + " | " + df_feed["Tank"].astype(str)
     elif view_option == "Weekly":
-        df_feed["X_label"] = df_feed["Date"].dt.date.astype(str) + " | " + df_feed["Block"].astype(str) + " | " + df_feed["Tank"].astype(str)
+        # Weekly: group by week start date
+        if 'Date' in df_feed.columns:
+            df_feed["Week_Start"] = df_feed["Date"] - pd.to_timedelta(df_feed["Date"].dt.weekday, unit='d')
+            # Format X_label as string date for the week
+            df_feed["X_label"] = df_feed["Week_Start"].dt.strftime('%b %d, %Y')
+        else:
+            st.warning("Weekly view requires a 'Date' column in feed data.")
+            df_feed["X_label"] = 'Unknown'
 
+    # Plot line chart
     fig_feed = px.line(
         df_feed,
         x='X_label',
         y='Value',
-        color='Tank',
-        line_dash='Metric',
+        color='Metric',  # Different lines for Scheduled vs Actual
         markers=True,
-        color_discrete_map=tank_colors,
-        labels={"X_label":"Block | Tank","Value":"Feed (g)","Metric":"Parameter","Tank":"Tank"},
-        hover_data={"Tank": True,"Block": True,"Metric": True,"Value": True,"WorkerName": True}
+        labels={"X_label":"Date/Week","Value":"Feed (g)","Metric":"Parameter"},
+        hover_data={"Tank": True,"Block": True,"Metric": True,"Value": True,"WorkerName": True},
+        color_discrete_map={'ScheduledFeed_day_g':'blue','ActualFeed_day_g':'purple'}
     )
 
-    # Leftover Feed Risk
+    # Leftover Feed Risk (triangle-up markers)
     if 'ScheduledFeed_day_g' in view_df.columns and 'ActualFeed_day_g' in view_df.columns:
         view_df['Feed_Risk'] = ((view_df['ScheduledFeed_day_g'] - view_df['ActualFeed_day_g'])>0).astype(int)
         risk_points = view_df[view_df['Feed_Risk']==1].copy()
@@ -373,47 +431,53 @@ if not df_feed.empty:
             for col in ['Tank','Block','WorkerName']:
                 if col not in risk_points.columns:
                     risk_points[col] = 'Unknown'
-            risk_points['LeftoverFeed'] = (risk_points['ScheduledFeed_day_g'] - risk_points['ActualFeed_day_g']).round(2)
-            if view_option == "Daily":
+            # Weekly X_label for risk points
+            if view_option == "Weekly" and 'Date' in risk_points.columns:
+                risk_points["Week_Start"] = risk_points["Date"] - pd.to_timedelta(risk_points["Date"].dt.weekday, unit='d')
+                risk_points["X_label"] = risk_points["Week_Start"].dt.strftime('%b %d, %Y')
+            else:
                 risk_points["X_label"] = risk_points["Block"].astype(str) + " | " + risk_points["Tank"].astype(str)
-            elif view_option == "Weekly":
-                
-                risk_points["X_label"] = risk_points["Date"].dt.date.astype(str) + " | " + risk_points["Block"].astype(str) + " | " + risk_points["Tank"].astype(str)
 
+            risk_points['LeftoverFeed'] = (risk_points['ScheduledFeed_day_g'] - risk_points['ActualFeed_day_g']).round(2)
             fig_feed.add_scatter(
                 x=risk_points['X_label'],
                 y=risk_points['ScheduledFeed_day_g'],
                 mode='markers',
                 marker=dict(symbol='triangle-up', size=12, color='orange'),
-                name="Risk 4",
+                name="Risk",
                 customdata=risk_points[['Tank','Block','WorkerName','ActualFeed_day_g','LeftoverFeed']].to_numpy(),
                 hovertemplate=(
-                    "Block | Tank: %{x}<br>"
+                    "Date: %{x}<br>"
+                    "Tank: %{customdata[0]}<br>"
+                    "Block: %{customdata[1]}<br>"
+                    "Worker: %{customdata[2]}<br>"
                     "Scheduled Feed: %{y}<br>"
                     "Actual Feed: %{customdata[3]}<br>"
                     "Leftover Feed: %{customdata[4]}<br>"
-                    "Risk Score: 4<br>"
-                    "Worker: %{customdata[2]}<extra></extra>"
+                    "Risk<extra></extra>"
                 )
             )
 
-    st.plotly_chart(fig_feed,use_container_width=True)
+    st.plotly_chart(fig_feed, use_container_width=True)
 else:
     st.info("No feed data available.")
 
 
-# ============================================================
-# 8️⃣ MORTALITY TRENDS
-# ============================================================
+# --------Mortality Trends-----------
 st.subheader("Mortality Trends")
-required_cols = ['X_label','DeadCount_day','WorkerName_Water']
+required_cols = ['DeadCount_day','WorkerName_Water']
 if all(col in view_df.columns for col in required_cols):
-    df_mort = view_df[required_cols].copy()
+    df_mort = view_df[required_cols + ['Date','Block','Tank']].copy()
     if not df_mort.empty:
-        # For weekly, create X_label per day if needed
         if view_option == "Weekly":
-            df_mort["X_label"] = df_mort["Date"].dt.date.astype(str) + " | " + df_mort["Block"].astype(str) + " | " + df_mort["Tank"].astype(str)
-        
+            if selected_date != "All":
+                wk_start = pd.to_datetime(selected_date.split(" - ")[0])
+                wk_end = pd.to_datetime(selected_date.split(" - ")[1])
+                df_mort = df_mort[(df_mort['Date'] >= wk_start) & (df_mort['Date'] <= wk_end)].copy()
+            df_mort["X_label"] = df_mort["Date"].dt.date.astype(str)
+        else:
+            df_mort["X_label"] = df_mort["Block"].astype(str) + " | " + df_mort["Tank"].astype(str)
+
         df_total = df_mort.groupby('X_label').agg(
             TotalDead=('DeadCount_day','sum'),
             Workers=('WorkerName_Water', lambda x: ', '.join(x.dropna().unique()))
@@ -441,10 +505,6 @@ if all(col in view_df.columns for col in required_cols):
             hovertemplate="Date: %{x}<br>Total Dead Shrimp: %{y}<br>Workers: %{customdata}<extra></extra>"
         ))
 
-        max_dead = df_total['TotalDead'].max()
-        tick_step = 5
-        fig.update_yaxes(title_text="Dead Shrimp", tickvals=list(range(0, int(max_dead)+tick_step, tick_step)))
-        fig.update_layout(barmode='group', xaxis_title="Date/Week", yaxis_title="Dead Shrimp", hovermode='closest')
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No mortality data available for selected filters.")
@@ -452,31 +512,19 @@ else:
     missing = [c for c in required_cols if c not in view_df.columns]
     st.warning(f"Required columns missing: {', '.join(missing)}")
 
-# ============================================================
-# 9️⃣ TEMPERATURE & HUMIDITY GRAPHS — DAILY + WEEKLY (per tank)
-# ============================================================
+
+# --------Temperature & Humidity Trends-----------
 st.subheader("Temperature & Humidity Trends")
 
-# Column mapping
-metric_map = {
-    "Water Temperature": "WaterTemperature",
-    "Room Temperature": "RoomTemperature",
-    "Humidity": "Humidity",
-    "Worker Name_water": "WorkerName_Water"
-}
-
-metrics_temp = [v for k,v in metric_map.items() if v in view_df.columns]
+metrics_temp = [v for v in ["WaterTemperature","RoomTemperature","Humidity"] if v in view_df.columns]
 
 if not view_df.empty and metrics_temp:
     df_temp_plot = view_df.copy()
-    
-    # Ensure WorkerName_Water exists
     if "WorkerName_Water" not in df_temp_plot.columns:
         df_temp_plot["WorkerName_Water"] = "Unknown"
     else:
         df_temp_plot["WorkerName_Water"] = df_temp_plot["WorkerName_Water"].fillna("Unknown")
 
-    # Create X_label depending on view
     if view_option == "Daily":
         df_temp_plot["X_label"] = df_temp_plot["Block"].astype(str) + " | " + df_temp_plot["Tank"].astype(str)
         df_plot = df_temp_plot.melt(
@@ -485,24 +533,29 @@ if not view_df.empty and metrics_temp:
             var_name="Metric",
             value_name="Value"
         )
-
     elif view_option == "Weekly":
-        # Create weekly range label for each date
-        df_temp_plot["Week"] = df_temp_plot["Date"].dt.to_period("W").apply(lambda r: f"{r.start_time.date()} - {r.end_time.date()}")
+        # Ensure Date is datetime
+        if not pd.api.types.is_datetime64_any_dtype(df_temp_plot['Date']):
+            df_temp_plot['Date'] = pd.to_datetime(df_temp_plot['Date'])
+        if selected_date != "All":
+            wk_start = pd.to_datetime(selected_date.split(" - ")[0])
+            wk_end = pd.to_datetime(selected_date.split(" - ")[1])
+            df_temp_plot = df_temp_plot[(df_temp_plot['Date'] >= wk_start) & (df_temp_plot['Date'] <= wk_end)].copy()
+        df_temp_plot["X_label"] = df_temp_plot["Date"].dt.date.astype(str)
+
         df_plot = df_temp_plot.melt(
-            id_vars=["Week","Tank","Block","WorkerName_Water"],
+            id_vars=["X_label","Tank","Block","WorkerName_Water"],
             value_vars=metrics_temp,
             var_name="Metric",
             value_name="Value"
         )
-        # Aggregate per tank, block, worker, metric
-        df_plot = df_plot.groupby(["Week","Tank","Block","WorkerName_Water","Metric"], as_index=False).agg({"Value":"mean"})
-        df_plot = df_plot.rename(columns={"Week":"X_label"})
 
-    # Replace metric column with friendly names
-    df_plot["Metric"] = df_plot["Metric"].map({v:k for k,v in metric_map.items()})
+    df_plot["Metric"] = df_plot["Metric"].map({
+        "WaterTemperature":"Water Temperature",
+        "RoomTemperature":"Room Temperature",
+        "Humidity":"Humidity"
+    })
 
-    # Plot line graph
     fig_temp = px.line(
         df_plot,
         x="X_label",
@@ -510,13 +563,14 @@ if not view_df.empty and metrics_temp:
         color="Tank",
         line_dash="Metric",
         markers=True,
-        labels={"X_label":"Block | Tank / Week","Value":"Value","Metric":"Parameter","Tank":"Tank"},
+        labels={"X_label":"Date","Value":"Value","Metric":"Parameter","Tank":"Tank"},
         hover_data={"Tank":True,"Block":True,"Metric":True,"Value":True,"WorkerName_Water":True}
     )
 
     st.plotly_chart(fig_temp,use_container_width=True)
 else:
     st.info("No temperature or humidity data available.")
+
 
 
 # -------------------------------
