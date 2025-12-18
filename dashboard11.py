@@ -4,6 +4,11 @@ import plotly.express as px
 import altair as alt
 import plotly.graph_objects as go
 import plotly.io as pio
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+import tempfile
+
 
 # Reset Plotly renderer to prevent duplicate rendering
 pio.templates.default = None
@@ -13,7 +18,7 @@ st.set_page_config(page_title="Shrimp Farm Dashboard", layout="wide")
 # =============================
 #1️⃣ LOAD DATA
 # =============================
-excel_file = "tank_block_consolidated_report_2025-12-17_colored.xlsx"
+excel_file = "tank_block_consolidated_report_2025-12-18_colored.xlsx"
 df = pd.read_excel(excel_file)
 
 # Rename columns
@@ -148,6 +153,8 @@ if view_option == "Daily":
 
     st.subheader("Worker Performance & Water Quality Compliance (Daily)")
     st.dataframe(worker_summary[['WorkerName','pH_%','Salinity_%','ScheduledFeed_kg','ActualFeed_kg','Leftover_kg','Dead_Count','Dead_Weight_g']], use_container_width=True)
+ 
+
 
     # ----------------------------
     # Water quality plot
@@ -563,16 +570,16 @@ if not view_df.empty:
         return ""
 
     def color_ph(val):
-        if val <= 8.0 or val >= 8.3: return "background-color: #FF0000"
-        elif val <= 8.1 or val >= 8.2: return "background-color: #FF8000"
+        if val < 8.0 or val > 8.3: return "background-color: #FF0000"
+        elif val < 7.9 or val > 8.2: return "background-color: #FF8000"
         return ""
     def color_salinity(val):
-        if val <= 25 or val >= 30: return "background-color: #FF0000"
-        elif val <= 26 or val >= 29: return "background-color: #FF8000"
+        if val < 25 or val > 30: return "background-color: #FF0000"
+        elif val < 26 or val > 29: return "background-color: #FF8000"
         return ""
     def color_dead(val):
-        if val >= 5: return "background-color: #FF0000"
-        elif val >= 4: return "background-color: #FF8000"
+        if val > 5: return "background-color: #FF0000"
+        elif val > 4: return "background-color: #FF8000"
         return ""
     def color_feed(val):
         if val == 1: return "background-color: #FFA500"
@@ -590,3 +597,296 @@ if not view_df.empty:
     )
 else:
     st.info("No data available for selected filters.")
+
+# ==============================
+# 🦐 Shrimp Farm Dashboard – Executive Summary
+# ==============================
+# ==============================
+# 🦐 Shrimp Farm Dashboard – Executive Summary
+# ==============================
+import streamlit as st
+from io import BytesIO
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+import pandas as pd
+from reportlab.pdfbase.pdfmetrics import stringWidth
+
+def draw_wrapped_text(c, text, x, y, max_width, line_height=14):
+    """
+    Draws text in the PDF with wrapping if it exceeds max_width.
+    Returns the updated y-coordinate after drawing.
+    """
+    words = text.split()
+    line = ""
+    for word in words:
+        test_line = line + " " + word if line else word
+        if stringWidth(test_line, c._fontname, c._fontsize) < max_width:
+            line = test_line
+        else:
+            c.drawString(x, y, line)
+            y -= line_height
+            line = word
+    if line:
+        c.drawString(x, y, line)
+        y -= line_height
+    return y
+
+# ==============================
+# 1️⃣ Ensure dashboard dataframe exists
+# ==============================
+required_cols = ['Date','WorkerName','Tank','Block','pH','Salinity','WaterTemperature',
+                 'DeadCount_day','DeadWeight_g','ScheduledFeed_day_g','ActualFeed_day_g',
+                 'pH_OK','Salinity_OK']
+for col in required_cols:
+    if col not in view_df.columns:
+        st.error(f"Missing column: {col}")
+        st.stop()
+
+# ==============================
+# 2️⃣ Select Report Parameters
+# ==============================
+st.title("🦐 Shrimp Farm Dashboard – Executive Summary Report")
+start_date = st.date_input("Start Date")
+end_date = st.date_input("End Date")
+
+# ==============================
+# 3️⃣ Filter Data
+# ==============================
+filtered_df = view_df[
+    (view_df['Date'] >= pd.to_datetime(start_date)) &
+    (view_df['Date'] <= pd.to_datetime(end_date))
+].copy()
+
+if filtered_df.empty:
+    st.warning("No data available for the selected date range.")
+else:
+
+    # -----------------------------
+    # KPIs
+    # -----------------------------
+    total_feed_scheduled = filtered_df['ScheduledFeed_day_g'].sum() / 1000
+    total_feed_actual = filtered_df['ActualFeed_day_g'].sum() / 1000
+    total_leftover_feed = total_feed_scheduled - total_feed_actual
+    total_mortality = filtered_df['DeadCount_day'].sum()
+    initial_stock_estimate = 1000
+    mortality_pct = (total_mortality / initial_stock_estimate) * 100
+    ph_compliance = round(filtered_df['pH_OK'].mean()*100,1)
+    salinity_compliance = round(filtered_df['Salinity_OK'].mean()*100,1)
+
+    # -----------------------------
+    # Worker Performance Summary
+    # -----------------------------
+    worker_summary = (
+        filtered_df.groupby('WorkerName', as_index=False)
+        .agg(
+            ScheduledFeed_kg=('ScheduledFeed_day_g', lambda x: round(x.sum()/1000,2)),
+            ActualFeed_kg=('ActualFeed_day_g', lambda x: round(x.sum()/1000,2)),
+            Dead_Count=('DeadCount_day','sum'),
+            Dead_Weight_g=('DeadWeight_g','sum'),
+            pH_OK=('pH_OK','sum'),
+            Salinity_OK=('Salinity_OK','sum'),
+            Total_Records=('WorkerName','count'),
+            Total_Blocks=('Block','nunique')
+        )
+    )
+    worker_summary['pH_%'] = ((worker_summary['pH_OK']/worker_summary['Total_Records'])*100).round(1)
+    worker_summary['Salinity_%'] = ((worker_summary['Salinity_OK']/worker_summary['Total_Records'])*100).round(1)
+    worker_summary['Leftover_kg'] = (worker_summary['ScheduledFeed_kg'] - worker_summary['ActualFeed_kg']).round(2)
+    worker_summary['Mortality_%'] = ((worker_summary['Dead_Count']/worker_summary['Total_Records'])*100).round(1)
+
+    # -----------------------------
+    # Tank/Block Risk Summary
+    # -----------------------------
+    def get_status(row):
+        details = []
+        # pH
+        if 8.0 <= row['pH'] <= 8.3:
+            details.append("✅")
+        elif 7.9 <= row['pH'] < 8.0 or 8.3 < row['pH'] <= 8.4:
+            details.append("⚠")
+        else:
+            details.append("🔴")
+        # Salinity
+        if 25 <= row['Salinity'] <= 30:
+            details.append("✅")
+        elif 24 <= row['Salinity'] < 25 or 30 < row['Salinity'] <= 31:
+            details.append("⚠")
+        else:
+            details.append("🔴")
+        # Temp
+        if 28 <= row['WaterTemperature'] <= 30:
+            details.append("✅")
+        elif 27 <= row['WaterTemperature'] < 28 or 30 < row['WaterTemperature'] <= 31:
+            details.append("⚠")
+        else:
+            details.append("🔴")
+        # Mortality
+        if row['DeadCount_day'] < 5:
+            details.append("✅")
+        elif 5 <= row['DeadCount_day'] <= 6:
+            details.append("⚠")
+        else:
+            details.append("🔴")
+        return details
+
+    filtered_df[['pH_status','Sal_status','Temp_status','Mort_status']] = filtered_df.apply(lambda r: pd.Series(get_status(r)), axis=1)
+
+    # Include original values for Action Plan to avoid KeyError
+    tank_summary = filtered_df.groupby(['WorkerName','Tank','Block']).agg({
+        'pH_status':'max',
+        'Sal_status':'max',
+        'Temp_status':'max',
+        'Mort_status':'max',
+        'pH':'first',
+        'Salinity':'first',
+        'WaterTemperature':'first',
+        'DeadCount_day':'first'
+    }).reset_index()
+
+    # -----------------------------
+    # 4️⃣ Generate PDF
+    # -----------------------------
+    pdf_buffer = BytesIO()
+    c = canvas.Canvas(pdf_buffer, pagesize=A4)
+    width, height = A4
+
+    # Title & Info
+    c.setFont("Times-Bold", 18)
+    c.drawCentredString(width/2, height-50, "🦐PJ Site Executive Summary Report🦐")
+    c.setFont("Times-Roman", 12)
+    c.drawString(50, height-80, f"Reporting Period: {start_date} to {end_date}")
+    c.drawString(50, height-100, "Prepared By: Sai")
+    c.drawString(50, height-120, "Data Source: Streamlit Shrimp Farm Dashboard")
+
+    # KPIs
+    c.setFont("Times-Bold", 14)
+    c.drawString(50, height-150, "1️⃣ Key KPIs")
+    y = height-170
+    for line in [
+        f"Total Feed Scheduled: {total_feed_scheduled:.2f} kg",
+        f"Total Feed Actual: {total_feed_actual:.2f} kg",
+        f"Total Leftover Feed: {total_leftover_feed:.2f} kg",
+        f"Total Mortality: {total_mortality} shrimps ({mortality_pct:.1f}%)",
+        f"pH Compliance: {ph_compliance}%",
+        f"Salinity Compliance: {salinity_compliance}%"
+    ]:
+        c.setFont("Times-Roman", 12)
+        c.drawString(70, y, line)
+        y -= 18
+
+    # Worker Performance
+    c.setFont("Times-Bold", 14)
+    c.drawString(50, y-10, "2️⃣ Worker Performance Summary")
+    y -= 30
+    for _, row in worker_summary.iterrows():
+        c.setFont("Times-Bold", 12)
+        c.drawString(60, y, f"Worker: {row['WorkerName']}")
+        y -= 18
+        c.setFont("Times-Roman", 12)
+        bullets = [
+            f"• Scheduled Feed (kg): {row['ScheduledFeed_kg']}",
+            f"• Actual Feed (kg): {row['ActualFeed_kg']}",
+            f"• Leftover Feed (kg): {row['Leftover_kg']}",
+            f"• Dead Count: {row['Dead_Count']}",
+            f"• Dead Weight (g): {round(row['Dead_Weight_g'],2)}",
+            f"• Mortality %: {row['Mortality_%']}%",
+            f"• Blocks Managed: {row['Total_Blocks']}",
+            f"• pH Compliance: {row['pH_%']}%",
+            f"• Salinity Compliance: {row['Salinity_%']}%"
+        ]
+        for b in bullets:
+            c.drawString(80, y, b)
+            y -= 16
+        y -= 8
+
+    # Tank/Block Risk Summary
+    c.setFont("Times-Bold", 14)
+    c.drawString(50, y-10, "3️⃣ Tank/Block Risk Summary")
+    y -= 30
+    for worker in tank_summary['WorkerName'].unique():
+        c.setFont("Times-Bold", 12)
+        c.drawString(60, y, f"Worker: {worker}")
+        y -= 18
+        worker_df = tank_summary[tank_summary['WorkerName']==worker]
+        for _, t in worker_df.iterrows():
+            x_pos = 80
+            c.setFont("Times-Roman", 12)
+            c.drawString(x_pos, y, f"• Tank/Block: {t['Tank']}/{t['Block']}")
+            x_pos += 130
+
+            colors_map = {"✅": colors.green, "⚠": colors.orange, "🔴": colors.red}
+            symbol_spacing = 20
+            label_spacing = 50
+
+            for status, label in zip([t['pH_status'], t['Sal_status'], t['Temp_status'], t['Mort_status']],
+                                     ["pH", "Salinity", "Temp", "Mortality"]):
+                c.setFont("Times-Bold", 12)
+                c.setFillColor(colors_map[status])
+                c.drawString(x_pos, y, status)
+                x_pos += symbol_spacing
+
+                c.setFont("Times-Roman", 12)
+                c.setFillColor(colors.black)
+                c.drawString(x_pos, y, label)
+                x_pos += label_spacing
+
+            y -= 16
+            if y < 100:
+                c.showPage()
+                y = height-50
+
+    # -----------------------------
+    # 5️⃣ Action Plan / Recommendations (Grouped by Tank/Block)
+    # -----------------------------
+    c.setFont("Times-Bold", 14)
+    c.drawString(50, y-10, "4️⃣ Action Plan / Recommendations")
+    y -= 30
+
+    c.setFont("Times-Bold", 12)
+    c.drawString(70, y, "Tank/Block")
+    c.drawString(180, y, "Parameter")
+    c.drawString(240, y, "Value")
+    c.drawString(280, y, "Status")
+    c.drawString(350, y, "Recommended Action")
+    y -= 20
+    c.setFont("Times-Roman", 12)
+
+    for _, t in tank_summary.iterrows():
+        for status, param, val in zip([t['pH_status'], t['Sal_status'], t['Temp_status'], t['Mort_status']],
+                                     ["pH","Salinity","Temp","Mortality"],
+                                     [t['pH'], t['Salinity'], t['WaterTemperature'], t['DeadCount_day']]):
+            if status != "✅":
+                c.drawString(70, y, f"{t['Tank']}/{t['Block']}")
+                c.drawString(180, y, param)
+                c.drawString(240, y, str(val))
+                c.setFillColor(colors_map[status])
+                c.drawString(280, y, status)
+                c.setFillColor(colors.black)
+
+                if param == "pH":
+                    action = "Follow SOP: maintain pH between 8.0–8.3"
+                elif param == "Salinity":
+                    action = "Follow SOP: maintain salinity between 25–30 ppt"
+                elif param == "Temp":
+                    action = "Follow SOP: maintain temperature between 28–30°C"
+                else:
+                    action = "Follow SOP: investigate cause and monitor mortality"
+
+                y = draw_wrapped_text(c, action, 350, y, max_width=200, line_height=16)
+
+            if y < 100:
+                c.showPage()
+                y = height-50
+                c.setFont("Times-Roman", 12)
+
+    c.save()
+    pdf_buffer.seek(0)
+
+    st.success("✅ PDF generated successfully!")
+    st.download_button(
+        label="⬇️ Download Executive Summary PDF",
+        data=pdf_buffer,
+        file_name="PJ_Site_Executive_Summary.pdf",
+        mime="application/pdf"
+    )
