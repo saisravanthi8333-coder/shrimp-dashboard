@@ -8,6 +8,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 import tempfile
+from fpdf import FPDF
 
 # Reset Plotly renderer to prevent duplicate rendering
 pio.templates.default = None
