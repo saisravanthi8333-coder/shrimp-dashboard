@@ -1280,29 +1280,22 @@ st.title("🦐 Shrimp Farm Performance Scorecard")
 # -------------------------
 abw_df = pd.DataFrame()  # empty by default
 
-# -------------------------
-# Load ABW file safely
-# -------------------------
-try:
-    abw_file = r"C:\Users\123\Desktop\PJSite_Dashboard\data\daily_reports\ABW\ABW.xlsx"
-    abw_df = pd.read_excel(abw_file)
+# ---------------------------
+# Load ABW.xlsx safely
+# ---------------------------
+ABW_PATH = os.path.normpath(os.path.join(BASE_DIR, "..", "data", "daily_reports", "ABW", "ABW.xlsx"))
 
-    # Clean columns
-    abw_df.columns = abw_df.columns.str.strip()
-    abw_df['Block'] = abw_df['Block'].astype(str).str.strip().str.upper()
-    abw_df['Tank'] = abw_df['Tank'].astype(str).str.strip().str.upper()
-    abw_df['ABW_start'] = pd.to_numeric(
-        abw_df['ABW_start'].astype(str).str.replace('g','',regex=False),
-        errors='coerce'
-    )
-    abw_df['ABW_end'] = pd.to_numeric(
-        abw_df['ABW_end'].astype(str).str.replace('g','',regex=False),
-        errors='coerce'
-    )
+if not os.path.exists(ABW_PATH):
+    st.warning(f"ABW file not found: {ABW_PATH}. Please update the ABW.xlsx file in the folder.")
+    abw_df = None
+else:
+    try:
+        abw_df = pd.read_excel(ABW_PATH)
+        st.write(f"✅ Loaded ABW file: {os.path.basename(ABW_PATH)}")
+    except Exception as e:
+        st.error(f"Failed to load ABW file: {ABW_PATH}\nError: {e}")
+        abw_df = None
 
-except Exception as e:
-    st.error(f"ABW Excel Load Error: {e}")
-    st.stop()
 
 # -------------------------
 # Date selectors
