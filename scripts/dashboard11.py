@@ -72,7 +72,7 @@ except Exception as e:
     st.stop()
 
 # Optional: show the loaded file name in the dashboard
-st.write(f"✅ Loaded file: {os.path.basename(latest_file)}")
+#st.write(f"✅ Loaded file: {os.path.basename(latest_file)}")
 
 # Load the Excel file
 df = pd.read_excel(latest_file)
@@ -1291,7 +1291,7 @@ if not os.path.exists(ABW_PATH):
 else:
     try:
         abw_df = pd.read_excel(ABW_PATH)
-        st.write(f"✅ Loaded ABW file: {os.path.basename(ABW_PATH)}")
+        #st.write(f"✅ Loaded ABW file: {os.path.basename(ABW_PATH)}")
     except Exception as e:
         st.error(f"Failed to load ABW file: {ABW_PATH}\nError: {e}")
         abw_df = None
