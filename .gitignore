@@ -1,0 +1,27 @@
+# Ignore virtual environment
+.venv/
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore everything by default
+*
+
+# Except these
+!.gitignore
+!requirements.txt
+
+# Scripts folder
+!scripts/
+!scripts/dashboard11.py
+
+# Data output folder
+!data/
+!data/output/
+!data/output/tank_summary_report/
+
+# ABW file
+!data/daily_reports/ABW/
+!data/daily_reports/ABW/ABW.xlsx
