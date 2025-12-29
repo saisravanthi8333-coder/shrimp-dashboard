@@ -24,7 +24,9 @@ st_autorefresh(interval=30 * 1000, key="datarefresh")
 # ---------------------------
 # 2️⃣ Folder to watch
 # ---------------------------
-WATCH_FOLDER = r"C:\Users\123\Desktop\PJSite_Dashboard\data\output\tank_summary_report"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # folder where dashboard11.py is
+WATCH_FOLDER = os.path.join(BASE_DIR, "..", "data", "output", "tank_summary_report")
+WATCH_FOLDER = os.path.normpath(WATCH_FOLDER)
 
 # Streamlit session state to hold the latest file
 if 'latest_file' not in st.session_state:
