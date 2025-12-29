@@ -24,31 +24,55 @@ st_autorefresh(interval=30 * 1000, key="datarefresh")
 # ---------------------------
 # 2️⃣ Folder to watch
 # ---------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # folder where dashboard11.py is
-WATCH_FOLDER = os.path.join(BASE_DIR, "..", "data", "output", "tank_summary_report")
-WATCH_FOLDER = os.path.normpath(WATCH_FOLDER)
+import os
+import streamlit as st
+import pandas as pd
+
+# Base folder of this script
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Relative path to the tank summary report folder
+WATCH_FOLDER = os.path.normpath(os.path.join(BASE_DIR, "..", "data", "output", "tank_summary_report"))
+
+# Ensure the folder exists
+if not os.path.exists(WATCH_FOLDER):
+    st.error(f"Tank summary folder not found: {WATCH_FOLDER}")
+    st.stop()
 
 # Streamlit session state to hold the latest file
 if 'latest_file' not in st.session_state:
     st.session_state.latest_file = None
 
-
 # ---------------------------
 # 5️⃣ Load latest tank summary
 # ---------------------------
-latest_file = st.session_state.latest_file
+def get_latest_file(folder):
+    """Return the latest Excel file in the folder or None if empty."""
+    excel_files = [f for f in os.listdir(folder) if f.endswith(".xlsx")]
+    if not excel_files:
+        return None
+    latest = max(excel_files, key=lambda f: os.path.getctime(os.path.join(folder, f)))
+    return os.path.join(folder, latest)
 
-if latest_file is None:
-    # Get all Excel files in the folder
-    files = [f for f in os.listdir(WATCH_FOLDER) if f.endswith(".xlsx")]
-    
-    if not files:   # Now 'files' is defined
+# Load the latest file
+if st.session_state.latest_file is None:
+    latest_file = get_latest_file(WATCH_FOLDER)
+    if latest_file is None:
         st.warning("No tank summary files found yet. Waiting for a new file...")
         st.stop()
-    
-    # Pick the most recent file
-    latest_file = os.path.join(WATCH_FOLDER, max(files, key=lambda f: os.path.getctime(os.path.join(WATCH_FOLDER, f))))
     st.session_state.latest_file = latest_file
+else:
+    latest_file = st.session_state.latest_file
+
+# Read the Excel file into a DataFrame
+try:
+    df = pd.read_excel(latest_file)
+except Exception as e:
+    st.error(f"Failed to load Excel file: {latest_file}\nError: {e}")
+    st.stop()
+
+# Optional: show the loaded file name in the dashboard
+st.write(f"✅ Loaded file: {os.path.basename(latest_file)}")
 
 # Load the Excel file
 df = pd.read_excel(latest_file)
