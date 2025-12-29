@@ -1281,21 +1281,18 @@ st.title("🦐 Shrimp Farm Performance Scorecard")
 abw_df = pd.DataFrame()  # empty by default
 
 # ---------------------------
-# Load ABW.xlsx safely
+# Load ABW.xlsx silently
 # ---------------------------
 ABW_PATH = os.path.normpath(os.path.join(BASE_DIR, "..", "data", "daily_reports", "ABW", "ABW.xlsx"))
 
-if not os.path.exists(ABW_PATH):
-    st.warning(f"ABW file not found: {ABW_PATH}. Please update the ABW.xlsx file in the folder.")
-    abw_df = None
-else:
+if os.path.exists(ABW_PATH):
     try:
         abw_df = pd.read_excel(ABW_PATH)
-        #st.write(f"✅ Loaded ABW file: {os.path.basename(ABW_PATH)}")
     except Exception as e:
         st.error(f"Failed to load ABW file: {ABW_PATH}\nError: {e}")
         abw_df = None
-
+else:
+    abw_df = None
 
 # -------------------------
 # Date selectors
