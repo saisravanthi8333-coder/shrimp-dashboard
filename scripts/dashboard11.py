@@ -1233,10 +1233,6 @@ else:
     )
 
 
-
-
-
-
 # ==============================
 # 🦐 Shrimp Farm Scorecard – Unified Streamlit App
 # ==============================
@@ -1280,19 +1276,29 @@ st.title("🦐 Shrimp Farm Performance Scorecard")
 # -------------------------
 abw_df = pd.DataFrame()  # empty by default
 
-# ---------------------------
-# Load ABW.xlsx silently
-# ---------------------------
-ABW_PATH = os.path.normpath(os.path.join(BASE_DIR, "..", "data", "daily_reports", "ABW", "ABW.xlsx"))
+# -------------------------
+# Load ABW file safely
+# -------------------------
+try:
+    abw_file = r"C:\Users\123\Desktop\PJSite_Dashboard\data\daily_reports\ABW\ABW.xlsx"
+    abw_df = pd.read_excel(abw_file)
 
-if os.path.exists(ABW_PATH):
-    try:
-        abw_df = pd.read_excel(ABW_PATH)
-    except Exception as e:
-        st.error(f"Failed to load ABW file: {ABW_PATH}\nError: {e}")
-        abw_df = None
-else:
-    abw_df = None
+    # Clean columns
+    abw_df.columns = abw_df.columns.str.strip()
+    abw_df['Block'] = abw_df['Block'].astype(str).str.strip().str.upper()
+    abw_df['Tank'] = abw_df['Tank'].astype(str).str.strip().str.upper()
+    abw_df['ABW_start'] = pd.to_numeric(
+        abw_df['ABW_start'].astype(str).str.replace('g','',regex=False),
+        errors='coerce'
+    )
+    abw_df['ABW_end'] = pd.to_numeric(
+        abw_df['ABW_end'].astype(str).str.replace('g','',regex=False),
+        errors='coerce'
+    )
+
+except Exception as e:
+    st.error(f"ABW Excel Load Error: {e}")
+    st.stop()
 
 # -------------------------
 # Date selectors
@@ -1340,11 +1346,6 @@ if 'view_df' in globals() and not abw_df.empty:
     # Compute pH and Salinity mean separately
     tank_df['pH'] = merged_df.groupby(['Block','Tank'])['pH'].mean().values
     tank_df['Salinity'] = merged_df.groupby(['Block','Tank'])['Salinity'].mean().values
-    # Ensure numeric columns
-    tank_df['InitialCount'] = pd.to_numeric(tank_df['InitialCount'], errors='coerce')
-    tank_df['ABW_start'] = pd.to_numeric(tank_df['ABW_start'], errors='coerce')
-    # Replace NaN with 0 if required
-    tank_df[['InitialCount', 'ABW_start']] = (tank_df[['InitialCount', 'ABW_start']].fillna(0))
 
     # Tank Calculations
     tank_df['Dead_Count'] = tank_df['InitialCount'] - tank_df['LiveCount']
