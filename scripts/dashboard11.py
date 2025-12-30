@@ -1340,6 +1340,11 @@ if 'view_df' in globals() and not abw_df.empty:
     # Compute pH and Salinity mean separately
     tank_df['pH'] = merged_df.groupby(['Block','Tank'])['pH'].mean().values
     tank_df['Salinity'] = merged_df.groupby(['Block','Tank'])['Salinity'].mean().values
+    # Ensure numeric columns
+    tank_df['InitialCount'] = pd.to_numeric(tank_df['InitialCount'], errors='coerce')
+    tank_df['ABW_start'] = pd.to_numeric(tank_df['ABW_start'], errors='coerce')
+    # Replace NaN with 0 if required
+    tank_df[['InitialCount', 'ABW_start']] = (tank_df[['InitialCount', 'ABW_start']].fillna(0))
 
     # Tank Calculations
     tank_df['Dead_Count'] = tank_df['InitialCount'] - tank_df['LiveCount']
