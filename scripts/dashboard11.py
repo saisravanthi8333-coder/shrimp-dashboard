@@ -69,7 +69,7 @@ except Exception as e:
     st.stop()
 
 # Optional: show the loaded file name in the dashboard
-st.write(f"✅ Loaded file: {os.path.basename(latest_file)}")
+#st.write(f"✅ Loaded file: {os.path.basename(latest_file)}")
 
 
 # Example: show dataframe
