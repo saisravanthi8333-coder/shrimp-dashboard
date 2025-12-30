@@ -11,7 +11,6 @@ from reportlab.lib.pagesizes import A4
 import tempfile
 import os
 from streamlit_autorefresh import st_autorefresh
-from xlsxwriter import Workbook
 
 
 # ---------------------------
