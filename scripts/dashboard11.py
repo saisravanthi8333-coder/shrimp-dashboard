@@ -11,6 +11,7 @@ from reportlab.lib.pagesizes import A4
 import tempfile
 import os
 from streamlit_autorefresh import st_autorefresh
+from xlsxwriter import Workbook
 
 
 # ---------------------------
@@ -24,9 +25,6 @@ st_autorefresh(interval=30 * 1000, key="datarefresh")
 # ---------------------------
 # 2️⃣ Folder to watch
 # ---------------------------
-import os
-import streamlit as st
-import pandas as pd
 
 # Base folder of this script
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -72,11 +70,8 @@ except Exception as e:
     st.stop()
 
 # Optional: show the loaded file name in the dashboard
-#st.write(f"✅ Loaded file: {os.path.basename(latest_file)}")
+st.write(f"✅ Loaded file: {os.path.basename(latest_file)}")
 
-# Load the Excel file
-df = pd.read_excel(latest_file)
-#st.write(f"Loaded file: {os.path.basename(latest_file)}")
 
 # Example: show dataframe
 #st.dataframe(df)
@@ -1231,6 +1226,10 @@ else:
         file_name="PJ_Site_Executive_Summary.pdf",
         mime="application/pdf"
     )
+
+
+
+
 
 
 # ==============================
