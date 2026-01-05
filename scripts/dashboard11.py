@@ -25,29 +25,32 @@ st_autorefresh(interval=30 * 1000, key="datarefresh")
 # 2️⃣ Folder to watch (GitHub-safe)
 # ---------------------------
 
+import os
+import glob
+import pandas as pd
+import streamlit as st
+
 # ---------------------------
-# Path to your tank summary file in the repo
+# Path to your tank summary file in the repo root
 # ---------------------------
 
-# 1. Try to find the root based on common Streamlit Cloud structure
-# If /mount/src/shrimp-dashboard/ exists, use it. Otherwise, use local relative path.
+# Check if running on Streamlit Cloud, otherwise fallback to local path logic
 if os.path.exists("/mount/src/shrimp-dashboard"):
     repo_root = "/mount/src/shrimp-dashboard"
 else:
-    # Local fallback: folder of this script -> one level up
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    repo_root = os.path.abspath(os.path.join(BASE_DIR, ".."))
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # folder of this script (e.g., /scripts)
+    repo_root = os.path.abspath(os.path.join(BASE_DIR, "..")) # go up one level to shrimp-dashboard root
 
-# 2. Look for files in the root
-search_pattern = os.path.join(repo_root, "Tank_Consolidated_Report_*.xlsx")
-files = glob.glob(search_pattern)
+# Look for files matching Tank_Consolidated_Report_*.xlsx directly in the root
+files = glob.glob(os.path.join(repo_root, "Tank_Consolidated_Report_*.xlsx"))
 
 if not files:
-    st.error(f"❌ No tank summary files found in: {repo_root}")
-    st.info("Current Directory Contents: " + str(os.listdir(repo_root)))
+    st.error(f"❌ No tank summary files found in the root directory: {repo_root}")
+    # Optional: list files to see what is actually there for debugging
+    st.write("Files found in root:", os.listdir(repo_root))
     st.stop()
 
-# 3. Pick the latest file by modification time
+# Pick the latest file by modification time
 latest_file = max(files, key=os.path.getmtime)
 
 # ---------------------------
@@ -59,6 +62,8 @@ try:
 except Exception as e:
     st.error(f"Failed to load Excel file: {latest_file}\nError: {e}")
     st.stop()
+
+
 # Example: show dataframe
 #st.dataframe(df)
 
