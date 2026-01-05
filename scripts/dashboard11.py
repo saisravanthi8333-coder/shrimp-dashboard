@@ -22,54 +22,31 @@ st.set_page_config(page_title="Shrimp Farm Dashboard", layout="wide")
 st_autorefresh(interval=30 * 1000, key="datarefresh")
 
 # ---------------------------
-# 2️⃣ Folder to watch
-# ---------------------------
-
-# ---------------------------
 # 2️⃣ Folder to watch (GitHub-safe)
 # ---------------------------
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # folder of this script
-WATCH_FOLDER = os.path.normpath(os.path.join(BASE_DIR, "..", "Tank_Consolidated_Report"))
+# Since the file is directly in shrimp-dashboard, we go one level up
+tank_file_pattern = os.path.join(BASE_DIR, "..", "Tank_Consolidated_Report_*.xlsx")
 
-if not os.path.exists(WATCH_FOLDER):
-    os.makedirs(WATCH_FOLDER)
-    st.info(f"Folder created: {WATCH_FOLDER}")
+# Find the file matching the pattern
+import glob
+files = glob.glob(tank_file_pattern)
 
-st.write(f"Watching folder: {WATCH_FOLDER}")
-
-# ---------------------------
-# Find the latest tank summary file
-# ---------------------------
-def get_latest_file(folder):
-    """Return the latest Excel file in the folder or None if empty."""
-    excel_files = glob(os.path.join(folder, "Tank_Consolidated_Report_*.xlsx"))
-    if not excel_files:
-        return None
-    latest = max(excel_files, key=os.path.getmtime)
-    return latest
-
-# Use session_state to store the latest file
-if 'latest_file' not in st.session_state:
-    st.session_state.latest_file = get_latest_file(WATCH_FOLDER)
-
-latest_file = st.session_state.latest_file
-
-if latest_file is None:
-    st.warning("No tank summary files found yet. Waiting for a new file...")
+if not files:
+    st.warning("No tank summary files found in the repo!")
     st.stop()
 
-# ---------------------------
-# Load the latest Excel file
-# ---------------------------
+# Pick the latest file by modification time (just in case there are multiple)
+latest_file = max(files, key=os.path.getmtime)
+
+# Load the Excel file into a DataFrame
 try:
     df = pd.read_excel(latest_file)
+    st.success(f"✅ Loaded file: {os.path.basename(latest_file)}")
 except Exception as e:
     st.error(f"Failed to load Excel file: {latest_file}\nError: {e}")
     st.stop()
-
-# Optional: show loaded file name
-st.write(f"✅ Loaded file: {os.path.basename(latest_file)}")
-
 # Example: show dataframe
 #st.dataframe(df)
 
