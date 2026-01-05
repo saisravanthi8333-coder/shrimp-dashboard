@@ -142,6 +142,73 @@ elif view_option == "Monthly":
     month_options = sorted(df['Month'].astype(str).unique())
     selected_month = st.sidebar.selectbox("Select Month", month_options)
 
+# ----------------------------
+# Assign workers dynamically based on block
+# ----------------------------
+# Extract block letter E-J
+df['Block_Letter'] = df['Block'].astype(str).str.upper().str.extract(r'([E-J])', expand=False)
+
+# Map blocks to workers
+block_worker_map = {
+    'E': 'Jimmy', 'F': 'Jimmy', 'G': 'Jimmy',
+    'H': 'Flora', 'I': 'Flora', 'J': 'Flora'
+}
+
+# Replace WorkerName based on block
+df['WorkerName'] = df['Block_Letter'].map(block_worker_map).fillna('Others')
+
+
+# =============================
+# 2️⃣ SIDEBAR FILTERS
+# =============================
+st.sidebar.header("Filters")
+
+# --- Block Filter ---
+blocks = ["All"] + sorted(df['Block'].dropna().unique())
+selected_block = st.sidebar.selectbox("Select Block", blocks)
+
+# --- Tank Filter ---
+expected_tanks = ["T3", "T4", "T5"]
+if selected_block == "All":
+    tanks_available = df['Tank'].dropna().unique().tolist()
+else:
+    tanks_available = df[df['Block'] == selected_block]['Tank'].dropna().unique().tolist()
+for t in expected_tanks:
+    if t not in tanks_available:
+        tanks_available.append(t)
+tanks = ["All"] + tanks_available
+selected_tank = st.sidebar.selectbox("Select Tank", tanks)
+
+# --- View Mode ---
+view_option = st.sidebar.radio("View Mode", ["Daily", "Weekly", "Monthly"])
+
+# --- Date / Week / Month Selector ---
+if view_option == "Daily":
+    dates = ["All"] + sorted(df['Date'].dt.date.unique())
+    selected_date = st.sidebar.selectbox("Select Date", dates)
+
+elif view_option == "Weekly":
+    df['Week_Start'] = df['Date'] - pd.to_timedelta(df['Date'].dt.weekday, unit='d')
+    df['Week_End'] = df['Week_Start'] + pd.Timedelta(days=6)
+
+    week_ranges = df[['Week_Start', 'Week_End']].drop_duplicates().sort_values('Week_Start')
+    week_options = week_ranges.apply(lambda r: f"{r['Week_Start'].date()} to {r['Week_End'].date()}", axis=1).tolist()
+    week_options = ["All"] + week_options
+    selected_week = st.sidebar.selectbox("Select Week", week_options)
+    # Determine start & end dates
+    if selected_week == "All":
+       week_start = df['Date'].min()
+       week_end = df['Date'].max()
+    else:
+       week_start, week_end = selected_week.split(" to ")
+       week_start = pd.to_datetime(week_start)
+       week_end = pd.to_datetime(week_end)
+
+elif view_option == "Monthly":
+    df['Month'] = df['Date'].dt.to_period('M')
+    month_options = sorted(df['Month'].astype(str).unique())
+    selected_month = st.sidebar.selectbox("Select Month", month_options)
+
 # =============================
 # 3️⃣ FILTER DATA
 # =============================
@@ -200,7 +267,7 @@ if view_option == "Daily":
     view_df['Salinity'] = pd.to_numeric(view_df['Salinity'], errors='coerce')
 
     view_df['DeadWeight_g'] = view_df['DeadWeight_g'].fillna(0)
-    view_df['pH_OK'] = view_df['pH'].between(7.7, 8.3).astype(int)
+    view_df['pH_OK'] = view_df['pH'].between(7.6, 8.3).astype(int)
     view_df['Salinity_OK'] = view_df['Salinity'].between(25, 30).astype(int)
     view_df['WorkerName'] = view_df['WorkerName'].astype(str).str.strip().str.title()
 
@@ -210,12 +277,12 @@ if view_option == "Daily":
     # Map blocks to workers
     block_worker_map = {
         'E': 'Jimmy', 'F': 'Jimmy', 'G': 'Jimmy',
-        'H': 'Hikaru', 'I': 'Hikaru', 'J': 'Hikaru'
+        'H': 'Flora', 'I': 'Flora', 'J': 'Flora'
     }
     view_df['Worker_Assigned'] = view_df['Block_Letter'].map(block_worker_map)
 
-    # Keep only Jimmy & Hikaru blocks
-    worker_df = view_df[view_df['Worker_Assigned'].isin(['Jimmy','Hikaru'])].copy()
+    # Keep only Jimmy & Flora blocks
+    worker_df = view_df[view_df['Worker_Assigned'].isin(['Jimmy','Flora'])].copy()
 
     # Use WorkerName if present; otherwise fallback
     worker_df['Worker_Display'] = worker_df['WorkerName'].where(worker_df['WorkerName'].notna(), worker_df['Worker_Assigned'])
@@ -273,7 +340,7 @@ if view_option == "Daily":
             hover_data=['WorkerName','Tank','Block','Metric','Value']
         )
         # Critical pH markers
-        df_critical_ph = df_melt[(df_melt['Metric'] == 'pH') & ((df_melt['Value'] < 8.0) | (df_melt['Value'] > 8.3))]
+        df_critical_ph = df_melt[(df_melt['Metric'] == 'pH') & ((df_melt['Value'] < 7.6) | (df_melt['Value'] > 8.3))]
         fig.add_trace(go.Scatter(
             x=df_critical_ph['X_label'],
             y=df_critical_ph['Value'],
@@ -384,7 +451,7 @@ if view_option == "Weekly":
     st.subheader("Weekly Worker Performance & Compliance")
     weekly_df = view_df.copy()
     weekly_df['DeadWeight_g'] = weekly_df['DeadWeight_g'].fillna(0)
-    weekly_df['pH_OK'] = weekly_df['pH'].between(8.0, 8.3)
+    weekly_df['pH_OK'] = weekly_df['pH'].between(7.6, 8.3)
     weekly_df['Salinity_OK'] = weekly_df['Salinity'].between(25, 30)
     weekly_df['WorkerName'] = weekly_df['WorkerName'].astype(str).str.strip().str.title()
 
@@ -393,11 +460,11 @@ if view_option == "Weekly":
     # Map blocks to workers
     block_worker_map = {
          'E': 'Jimmy', 'F': 'Jimmy', 'G': 'Jimmy',
-         'H': 'Hikaru', 'I': 'Hikaru', 'J': 'Hikaru'
+         'H': 'Flora', 'I': 'Flora', 'J': 'Flora'
     }
 
     weekly_df['Worker_Assigned'] = weekly_df['Block_Letter'].map(block_worker_map)
-    worker_df = weekly_df[weekly_df['Worker_Assigned'].isin(['Jimmy','Hikaru'])].copy()
+    worker_df = weekly_df[weekly_df['Worker_Assigned'].isin(['Jimmy','Flora'])].copy()
     # Add Week column for aggregation
     worker_df['WeekRangeStart'] = worker_df['Date'] - pd.to_timedelta(worker_df['Date'].dt.dayofweek, unit='d')
     worker_df['WeekRangeEnd'] = worker_df['WeekRangeStart'] + pd.Timedelta(days=6)
@@ -463,7 +530,7 @@ if view_option == "Weekly":
         value_name='Value'
     )
 
-    df_critical_wq = df_wq[((df_wq['Metric']=='pH') & ((df_wq['Value'] < 8.0) | (df_wq['Value'] > 8.3))) |
+    df_critical_wq = df_wq[((df_wq['Metric']=='pH') & ((df_wq['Value'] < 7.6) | (df_wq['Value'] > 8.3))) |
                             ((df_wq['Metric']=='Salinity') & ((df_wq['Value'] < 25) | (df_wq['Value'] > 30)))]
 
     fig_wq = px.line(df_wq, x='X_label', y='Value', color='Tank', line_dash='Metric', markers=True,
@@ -575,13 +642,13 @@ if view_option == "Monthly":
     # ----------------------------
     # Monthly Worker Performance
     # ----------------------------
-    view_df['pH_OK'] = view_df['pH'].between(8.0,8.3)
+    view_df['pH_OK'] = view_df['pH'].between(7.6,8.3)
     view_df['Salinity_OK'] = view_df['Salinity'].between(25,30)
     view_df['WorkerName'] = view_df['WorkerName'].astype(str).str.strip().str.title()
     view_df['Block_Letter'] = view_df['Block'].astype(str).str.upper().str.extract(r'([E-J])', expand=False)
-    block_worker_map = {'E': 'Jimmy', 'F': 'Jimmy', 'G': 'Jimmy', 'H': 'Hikaru', 'I': 'Hikaru', 'J': 'Hikaru'}
+    block_worker_map = {'E': 'Jimmy', 'F': 'Jimmy', 'G': 'Jimmy', 'H': 'Flora', 'I': 'Flora', 'J': 'Flora'}
     view_df['Worker_Assigned'] = view_df['Block_Letter'].map(block_worker_map)
-    worker_df = view_df[view_df['Worker_Assigned'].isin(['Jimmy','Hikaru'])].copy()
+    worker_df = view_df[view_df['Worker_Assigned'].isin(['Jimmy','Flora'])].copy()
     worker_df['Worker_Display'] = worker_df['WorkerName'].where(worker_df['WorkerName'].notna(), worker_df['Worker_Assigned'])
 
     worker_summary = (
@@ -634,7 +701,7 @@ if view_option == "Monthly":
     )
 
     # Critical markers
-    df_critical_ph = df_melt[(df_melt['Metric']=='pH_avg') & ((df_melt['Value']<8.0)|(df_melt['Value']>8.3))]
+    df_critical_ph = df_melt[(df_melt['Metric']=='pH_avg') & ((df_melt['Value']<7.6)|(df_melt['Value']>8.3))]
     fig.add_trace(go.Scatter(
         x=df_critical_ph['X_label'],
         y=df_critical_ph['Value'],
@@ -718,13 +785,14 @@ def get_salinity_score(val):
     else: return 50
 
 def get_ph_score(val):
-    if 8.0 <= val <= 8.3:return 100  # Ideal
-    elif 7.8 <= val <= 8.0 or 8.3 <= val <= 8.5:return 80   # Acceptable
+    if 7.6 <= val <= 8.3:return 100  # Ideal
+    elif 7.8 <= val <= 7.6 or 8.3 <= val <= 8.5:return 80   # Acceptable
     else: return 50   # Danger    
 
 view_df['SalinityScore'] = view_df['Salinity'].apply(get_salinity_score)
 view_df['PHScore'] = view_df['pH'].apply(get_ph_score)
 view_df['OverallPerformance_pct'] = view_df[['Survival_pct','FeedEfficiency_pct','SalinityScore','PHScore']].mean(axis=1).round(2)
+
 
 # -------------------------------
 # Performance Table based on sidebar View Mode
@@ -779,9 +847,9 @@ if 'X_label' not in view_df.columns:
 
 # --- Ensure columns are numeric and replace non-numeric entries ---
 numeric_cols_defaults = {
-    'pH': 8.1,
-    'Salinity': 27,
-    'WaterTemperature': 29,
+    #'pH': 8.1,
+    #'Salinity': 27,
+    #'WaterTemperature': 29,
     'DeadCount_day': 0
 }
 
@@ -789,13 +857,15 @@ for col, default in numeric_cols_defaults.items():
     if col in view_df.columns:
         # Convert to numeric, coerce errors to NaN, then fill with default
         view_df[col] = pd.to_numeric(view_df[col], errors='coerce').fillna(default)
-
+for col in ['pH','Salinity','WaterTemperature']:
+    if col in view_df.columns:
+        view_df[col] = pd.to_numeric(view_df[col], errors='coerce')
 # ----------------------------------------------------------------------
 # Alert_Level logic
 def get_alert_level(row):
     alerts = []
     try:
-        if row['pH'] <= 8.0 or row['pH'] >= 8.3:
+        if row['pH'] <= 7.6 or row['pH'] >= 8.3:
             alerts.append("pH")
         if row['Salinity'] <= 25 or row['Salinity'] >= 30:
             alerts.append("Salinity")
@@ -803,6 +873,8 @@ def get_alert_level(row):
             alerts.append("Temp")
         if row['DeadCount_day'] > 5:
             alerts.append("Mortality")
+        if row.get('Has_Water_Data',1) == 0:
+            return "No Water Data ❌"
     except TypeError:
         # In case there is still an invalid value, treat as normal
         return "Normal ✅"
@@ -821,9 +893,9 @@ def get_alert_details(row):
     details = []
 
     # pH
-    if 8.0 <= row['pH'] <= 8.3:
+    if 7.6 <= row['pH'] <= 8.3:
         details.append("pH ✅")
-    elif 7.9 <= row['pH'] < 8.0 or 8.3 < row['pH'] <= 8.4:
+    elif 7.5 <= row['pH'] < 7.6 or 8.2 < row['pH'] <= 8.3:
         details.append("pH ⚠")
     else:
         details.append("pH 🔴")
@@ -881,9 +953,9 @@ if not view_df.empty:
         return ""
 
     def color_ph(val):
-        if val < 8.0 or val > 8.3:
+        if val < 7.6 or val > 8.3:
             return "background-color: #FF0000"
-        elif val < 7.9 or val > 8.2:
+        elif val < 7.6 or val > 8.2:
             return "background-color: #FF8000"
         return ""
 
@@ -988,12 +1060,12 @@ else:
     salinity_compliance = round(filtered_df['Salinity_OK'].mean()*100,1)
 
     # -----------------------------
-    # Worker Performance Summary (only Hikaru & Jimmy blocks)
+    # Worker Performance Summary (only Flora & Jimmy blocks)
     # -----------------------------
-    hikaru_blocks = ['H','I','J']
+    Flora_blocks = ['H','I','J']
     jimmy_blocks = ['E','F','G']
 
-    worker_df = filtered_df[filtered_df['Block'].str[0].isin(hikaru_blocks + jimmy_blocks)].copy()
+    worker_df = filtered_df[filtered_df['Block'].str[0].isin(Flora_blocks + jimmy_blocks)].copy()
 
     worker_summary = (
         worker_df.groupby('WorkerName', as_index=False)
@@ -1019,9 +1091,9 @@ else:
     def get_status(row):
         details = []
         # pH
-        if 8.0 <= row['pH'] <= 8.3:
+        if 7.6 <= row['pH'] <= 8.3:
             details.append("✅")
-        elif 7.9 <= row['pH'] < 8.0 or 8.3 < row['pH'] <= 8.4:
+        elif 7.6 <= row['pH'] < 7.6 or 8.3 < row['pH'] <= 8.4:
             details.append("⚠")
         else:
             details.append("🔴")
@@ -1064,8 +1136,8 @@ else:
     # Assign Worker Label for Tank/Block Risk Summary
     other_blocks = ['A','B','C','D','K']
     def assign_worker(block):
-        if block[0] in hikaru_blocks:
-            return "Hikaru"
+        if block[0] in Flora_blocks:
+            return "Flora"
         elif block[0] in jimmy_blocks:
             return "Jimmy"
         else:
@@ -1103,7 +1175,7 @@ else:
         c.drawString(70, y, line)
         y -= 18
 
-    # Worker Performance (Hikaru & Jimmy only)
+    # Worker Performance (Flora & Jimmy only)
     c.setFont("Times-Bold", 14)
     c.drawString(50, y-10, "2️⃣ Worker Performance Summary")
     y -= 30
@@ -1133,7 +1205,7 @@ else:
     c.drawString(50, y-10, "3️⃣ Tank/Block Risk Summary")
     y -= 30
 
-    for worker in ["Hikaru","Jimmy","Other"]:
+    for worker in ["Flora","Jimmy","Other"]:
         worker_df = tank_summary[tank_summary['Worker_Label']==worker]
         if not worker_df.empty:
             c.setFont("Times-Bold", 12)
@@ -1192,7 +1264,7 @@ else:
                 c.setFillColor(colors.black)
 
                 if param == "pH":
-                    action = "Follow SOP: maintain pH between 8.0–8.3"
+                    action = "Follow SOP: maintain pH between 7.6–8.3"
                 elif param == "Salinity":
                     action = "Follow SOP: maintain salinity between 25–30 ppt"
                 elif param == "Temp":
@@ -1220,9 +1292,6 @@ else:
 
 
 
-
-
-
 # ==============================
 # 🦐 Shrimp Farm Scorecard – Unified Streamlit App
 # ==============================
@@ -1238,12 +1307,12 @@ from fpdf import FPDF
 # -----------------------------
 TARGET_FCR_MAX = 1.0
 TARGET_SURVIVAL_MIN = 95.0
-PH_MIN, PH_MAX = 7.7, 8.3
+PH_MIN, PH_MAX = 7.6, 8.3
 SALINITY_MIN, SALINITY_MAX = 25, 30
 
 def get_target_weight(days):
     if days <= 30: return 2.0
-    if days <= 60: return 7.7
+    if days <= 60: return 7.6
     return 15.0
 
 def assign_worker(block):
@@ -1255,10 +1324,12 @@ def assign_worker(block):
     elif b[0] in jimmy_blocks: return "Jimmy"
     else: return "Other"
 
-import os
-import pandas as pd
-import streamlit as st
-from datetime import datetime, timedelta
+# -----------------------------
+# 2. DATA LOADING & FILTERING
+# -----------------------------
+st.set_page_config(page_title="Shrimp Farm Hub", layout="wide")
+st.title("🦐 Shrimp Farm Performance Scorecard")
+
 
 # -----------------------------
 # 1️⃣ Load ABW dynamically from repo
@@ -1290,8 +1361,6 @@ with c1:
     start_date = st.date_input("Start Date", value=datetime.today().date())
 with c2:
     end_date = st.date_input("End Date", value=datetime.today().date())
-
-
 # -----------------------------
 # 3. CORE PROCESSING
 # -----------------------------
@@ -1516,4 +1585,3 @@ if 'view_df' in globals() and not abw_df.empty:
     
     pdf_bytes = create_pdf(consolidated_v, worker_v, start_date, end_date)
     st.download_button("📄 Download PDF Report", pdf_bytes, "Farm_Report.pdf","application/pdf")
-
