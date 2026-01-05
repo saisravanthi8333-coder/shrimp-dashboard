@@ -25,28 +25,33 @@ st_autorefresh(interval=30 * 1000, key="datarefresh")
 # 2️⃣ Folder to watch (GitHub-safe)
 # ---------------------------
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # folder of this script
-# Since the file is directly in shrimp-dashboard, we go one level up
-tank_file_pattern = os.path.join(BASE_DIR, "..", "Tank_Consolidated_Report_*.xlsx")
+# ---------------------------
+# Path to your tank summary file in the repo
+# ---------------------------
 
-# Find the file matching the pattern
-import glob
-files = glob.glob(tank_file_pattern)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # folder of this script
+repo_root = os.path.join(BASE_DIR, "..")  # shrimp-dashboard folder
+
+# Look for files matching Tank_Consolidated_Report_*.xlsx
+files = glob.glob(os.path.join(repo_root, "Tank_Consolidated_Report_*.xlsx"))
 
 if not files:
-    st.warning("No tank summary files found in the repo!")
+    st.warning("No tank summary files found in the repo root!")
     st.stop()
 
-# Pick the latest file by modification time (just in case there are multiple)
+# Pick the latest file by modification time
 latest_file = max(files, key=os.path.getmtime)
 
-# Load the Excel file into a DataFrame
+# ---------------------------
+# Load the Excel file
+# ---------------------------
 try:
     df = pd.read_excel(latest_file)
     st.success(f"✅ Loaded file: {os.path.basename(latest_file)}")
 except Exception as e:
     st.error(f"Failed to load Excel file: {latest_file}\nError: {e}")
     st.stop()
+
 # Example: show dataframe
 #st.dataframe(df)
 
