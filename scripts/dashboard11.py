@@ -29,7 +29,7 @@ st_autorefresh(interval=30 * 1000, key="datarefresh")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Relative path to the tank summary report folder
-WATCH_FOLDER = os.path.normpath(os.path.join(BASE_DIR, "..", "data", "output", "tank_summary_report"))
+WATCH_FOLDER = os.path.normpath(os.path.join(BASE_DIR, "..", "tank_summary_report"))
 
 # Ensure the folder exists
 if not os.path.exists(WATCH_FOLDER):
@@ -1263,31 +1263,42 @@ def assign_worker(block):
     elif b[0] in jimmy_blocks: return "Jimmy"
     else: return "Other"
 
-# -----------------------------
-# 2. DATA LOADING & FILTERING
-# -----------------------------
-st.set_page_config(page_title="Shrimp Farm Hub", layout="wide")
-st.title("🦐 Shrimp Farm Performance Scorecard")
+import os
+import pandas as pd
+import streamlit as st
+from datetime import datetime, timedelta
 
+# -----------------------------
+# 1️⃣ Load ABW dynamically from repo
+# -----------------------------
 abw_df = pd.DataFrame()
-
 try:
-    abw_file = r"C:\Users\123\Desktop\PJSite_Dashboard\data\daily_reports\ABW\ABW.xlsx"
-    abw_df = pd.read_excel(abw_file)
+    base_dir = os.path.dirname(__file__)  # current folder: scripts/
+    abw_file_repo = os.path.join(base_dir, "../ABW.xlsx")  # adjust relative path if needed
+    abw_df = pd.read_excel(abw_file_repo)
+    
+    # Clean columns
     abw_df.columns = abw_df.columns.str.strip()
     abw_df['Block'] = abw_df['Block'].astype(str).str.strip().str.upper()
     abw_df['Tank'] = abw_df['Tank'].astype(str).str.strip().str.upper()
-    abw_df['ABW_start'] = pd.to_numeric(abw_df['ABW_start'].astype(str).str.replace('g','',regex=False), errors='coerce')
-    abw_df['ABW_end'] = pd.to_numeric(abw_df['ABW_end'].astype(str).str.replace('g','',regex=False), errors='coerce')
+    abw_df['ABW_start'] = pd.to_numeric(
+        abw_df['ABW_start'].astype(str).str.replace('g','',regex=False), errors='coerce')
+    abw_df['ABW_end'] = pd.to_numeric(
+        abw_df['ABW_end'].astype(str).str.replace('g','',regex=False), errors='coerce')
+    
 except Exception as e:
     st.error(f"ABW Excel Load Error: {e}")
     st.stop()
 
+# -----------------------------
+# 2️⃣ Date Input in sidebar
+# -----------------------------
 c1, c2 = st.columns(2)
 with c1:
-    start_date = st.date_input("Start Date", value=datetime.today())
+    start_date = st.date_input("Start Date", value=datetime.today().date())
 with c2:
-    end_date = st.date_input("End Date", value=datetime.today())
+    end_date = st.date_input("End Date", value=datetime.today().date())
+
 
 # -----------------------------
 # 3. CORE PROCESSING
