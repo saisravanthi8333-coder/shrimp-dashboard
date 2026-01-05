@@ -159,57 +159,6 @@ df['WorkerName'] = df['Block_Letter'].map(block_worker_map).fillna('Others')
 
 
 # =============================
-# 2️⃣ SIDEBAR FILTERS
-# =============================
-st.sidebar.header("Filters")
-
-# --- Block Filter ---
-blocks = ["All"] + sorted(df['Block'].dropna().unique())
-selected_block = st.sidebar.selectbox("Select Block", blocks)
-
-# --- Tank Filter ---
-expected_tanks = ["T3", "T4", "T5"]
-if selected_block == "All":
-    tanks_available = df['Tank'].dropna().unique().tolist()
-else:
-    tanks_available = df[df['Block'] == selected_block]['Tank'].dropna().unique().tolist()
-for t in expected_tanks:
-    if t not in tanks_available:
-        tanks_available.append(t)
-tanks = ["All"] + tanks_available
-selected_tank = st.sidebar.selectbox("Select Tank", tanks)
-
-# --- View Mode ---
-view_option = st.sidebar.radio("View Mode", ["Daily", "Weekly", "Monthly"])
-
-# --- Date / Week / Month Selector ---
-if view_option == "Daily":
-    dates = ["All"] + sorted(df['Date'].dt.date.unique())
-    selected_date = st.sidebar.selectbox("Select Date", dates)
-
-elif view_option == "Weekly":
-    df['Week_Start'] = df['Date'] - pd.to_timedelta(df['Date'].dt.weekday, unit='d')
-    df['Week_End'] = df['Week_Start'] + pd.Timedelta(days=6)
-
-    week_ranges = df[['Week_Start', 'Week_End']].drop_duplicates().sort_values('Week_Start')
-    week_options = week_ranges.apply(lambda r: f"{r['Week_Start'].date()} to {r['Week_End'].date()}", axis=1).tolist()
-    week_options = ["All"] + week_options
-    selected_week = st.sidebar.selectbox("Select Week", week_options)
-    # Determine start & end dates
-    if selected_week == "All":
-       week_start = df['Date'].min()
-       week_end = df['Date'].max()
-    else:
-       week_start, week_end = selected_week.split(" to ")
-       week_start = pd.to_datetime(week_start)
-       week_end = pd.to_datetime(week_end)
-
-elif view_option == "Monthly":
-    df['Month'] = df['Date'].dt.to_period('M')
-    month_options = sorted(df['Month'].astype(str).unique())
-    selected_month = st.sidebar.selectbox("Select Month", month_options)
-
-# =============================
 # 3️⃣ FILTER DATA
 # =============================
 view_df = df.copy()
