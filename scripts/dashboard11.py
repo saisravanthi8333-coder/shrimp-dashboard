@@ -1246,61 +1246,43 @@ from fpdf import FPDF
 # -----------------------------
 TARGET_FCR_MAX = 1.0
 TARGET_SURVIVAL_MIN = 95.0
-PH_MIN, PH_MAX = 8.0, 8.3
+PH_MIN, PH_MAX = 7.7, 8.3
 SALINITY_MIN, SALINITY_MAX = 25, 30
 
 def get_target_weight(days):
     if days <= 30: return 2.0
-    if days <= 60: return 8.0
+    if days <= 60: return 7.7
     return 15.0
 
 def assign_worker(block):
-    hikaru_blocks = ['H','I','J']
+    Flora_blocks = ['H','I','J']
     jimmy_blocks = ['E','F','G']
     b = str(block).strip().upper()
     if not b: return "Other"
-    if b[0] in hikaru_blocks: return "Hikaru"
+    if b[0] in Flora_blocks: return "Flora"
     elif b[0] in jimmy_blocks: return "Jimmy"
     else: return "Other"
 
 # -----------------------------
-# 2. DATA LOADING
+# 2. DATA LOADING & FILTERING
 # -----------------------------
 st.set_page_config(page_title="Shrimp Farm Hub", layout="wide")
 st.title("🦐 Shrimp Farm Performance Scorecard")
 
-# -------------------------
-# Initialize abw_df to avoid NameError
-# -------------------------
-abw_df = pd.DataFrame()  # empty by default
+abw_df = pd.DataFrame()
 
-# -------------------------
-# Load ABW file safely
-# -------------------------
 try:
-    abw_file = "data/daily_reports/ABW/ABW.xlsx"
+    abw_file = r"C:\Users\123\Desktop\PJSite_Dashboard\data\daily_reports\ABW\ABW.xlsx"
     abw_df = pd.read_excel(abw_file)
-
-    # Clean columns
     abw_df.columns = abw_df.columns.str.strip()
     abw_df['Block'] = abw_df['Block'].astype(str).str.strip().str.upper()
     abw_df['Tank'] = abw_df['Tank'].astype(str).str.strip().str.upper()
-    abw_df['ABW_start'] = pd.to_numeric(
-        abw_df['ABW_start'].astype(str).str.replace('g','',regex=False),
-        errors='coerce'
-    )
-    abw_df['ABW_end'] = pd.to_numeric(
-        abw_df['ABW_end'].astype(str).str.replace('g','',regex=False),
-        errors='coerce'
-    )
-
+    abw_df['ABW_start'] = pd.to_numeric(abw_df['ABW_start'].astype(str).str.replace('g','',regex=False), errors='coerce')
+    abw_df['ABW_end'] = pd.to_numeric(abw_df['ABW_end'].astype(str).str.replace('g','',regex=False), errors='coerce')
 except Exception as e:
     st.error(f"ABW Excel Load Error: {e}")
     st.stop()
 
-# -------------------------
-# Date selectors
-# -------------------------
 c1, c2 = st.columns(2)
 with c1:
     start_date = st.date_input("Start Date", value=datetime.today())
@@ -1311,39 +1293,38 @@ with c2:
 # 3. CORE PROCESSING
 # -----------------------------
 if 'view_df' in globals() and not abw_df.empty:
-    # Clean view_df
     view_df['Block'] = view_df['Block'].str.strip().str.upper()
     view_df['Tank'] = view_df['Tank'].str.strip().str.upper()
     view_df['Date'] = pd.to_datetime(view_df['Date'])
+    
     for col in ['DeadWeight_g','ActualFeed_day_g','InitialCount','LiveCount']:
         view_df[col] = pd.to_numeric(view_df[col], errors='coerce').fillna(0)
-
-    # Convert pH and Salinity to numeric but keep NaN
     for col in ['pH','Salinity']:
         view_df[col] = pd.to_numeric(view_df[col], errors='coerce')
 
-    filtered_df = view_df[(view_df['Date'] >= pd.to_datetime(start_date)) &
-                          (view_df['Date'] <= pd.to_datetime(end_date))].copy()
-    if filtered_df.empty:
-        st.warning("No data for selected date range.")
-        st.stop()
-
-    days_elapsed = max((pd.to_datetime(end_date) - pd.to_datetime(start_date)).days,1)
+    days_elapsed = max((pd.to_datetime(end_date) - pd.to_datetime(start_date)).days, 1)
     current_target_abw = get_target_weight(days_elapsed)
 
-    # Merge ABW
+    filtered_df = view_df[(view_df['Date'] >= pd.to_datetime(start_date)) & 
+                          (view_df['Date'] <= pd.to_datetime(end_date))].copy()
+    
+    if filtered_df.empty:
+        st.warning("No data found for the selected date range.")
+        st.stop()
+
     merged_df = filtered_df.merge(abw_df[['Block','Tank','ABW_start','ABW_end']], on=['Block','Tank'], how='left')
 
-    # Tank Aggregation
-    tank_df = merged_df.groupby(['Block','Tank']).agg({
-        'ABW_start':'first', 'ABW_end':'last',
-        'InitialCount':'first', 'LiveCount':'last',
-        'ActualFeed_day_g':'sum','DeadWeight_g':'sum'
+    # Aggregation (Still keeping counts in background for math)
+    tank_df = merged_df.sort_values(['Block', 'Tank', 'Date']).groupby(['Block', 'Tank']).agg({
+        'ABW_start': 'first',
+        'ABW_end': 'last',
+        'InitialCount': 'first',
+        'LiveCount': 'last',
+        'ActualFeed_day_g': 'sum',
+        'DeadWeight_g': 'sum',
+        'pH': 'mean',
+        'Salinity': 'mean'
     }).reset_index()
-
-    # Compute pH and Salinity mean separately
-    tank_df['pH'] = merged_df.groupby(['Block','Tank'])['pH'].mean().values
-    tank_df['Salinity'] = merged_df.groupby(['Block','Tank'])['Salinity'].mean().values
 
     # Tank Calculations
     tank_df['Dead_Count'] = tank_df['InitialCount'] - tank_df['LiveCount']
@@ -1352,71 +1333,112 @@ if 'view_df' in globals() and not abw_df.empty:
     tank_df['Biomass_kg'] = (tank_df['LiveCount'] * tank_df['ABW_end']/1000).round(2)
     tank_df['Weight_Gain_kg'] = (tank_df['Biomass_kg'] - tank_df['Biomass_start_kg']).round(2)
     tank_df['Weekly_Gain'] = (tank_df['ABW_end'] - tank_df['ABW_start']).round(3)
-    tank_df['ADG (g/day)'] = ((tank_df['ABW_end'] - tank_df['ABW_start']) / days_elapsed).round(3)
-    tank_df['Survival_%'] = (tank_df['LiveCount'] / tank_df['InitialCount'].replace(0,1) *100).round(2)
-    tank_df['FCR'] = np.where(tank_df['Weight_Gain_kg']>0,(tank_df['Feed_kg']/tank_df['Weight_Gain_kg']).round(2),0)
+    tank_df['ADG (g/day)'] = (tank_df['Weekly_Gain'] / days_elapsed).round(3)
+    tank_df['Survival_%'] = (tank_df['LiveCount'] / tank_df['InitialCount'].replace(0,1) * 100).round(2)
     tank_df['Worker'] = tank_df['Block'].apply(assign_worker)
+    tank_df['FCR'] = np.where(tank_df['Weight_Gain_kg']>0, (tank_df['Feed_kg']/tank_df['Weight_Gain_kg']).round(2), 0)
+
+    # -----------------------------
+    # 4. FARM CONSOLIDATED REPORT (Hidden Counts)
+    # -----------------------------
+    # We keep InitialCount and LiveCount in the DATA but remove them from p_list
+    full_metric_list = ["ABW_start","ABW_end","Weekly_Gain","InitialCount","LiveCount",
+                        "ActualFeed_day_g","DeadWeight_g","Dead_Count","DeadWeight_kg","Feed_kg",
+                        "Biomass_start_kg","Biomass_kg","Weight_Gain_kg","ADG (g/day)","Survival %",
+                        "FCR","Avg pH","Avg Salinity"]
+
+    # This is the list that controls the DISPLAY - Initial/Live counts are removed here
+    display_p_list = ["ABW_start","ABW_end","Weekly_Gain","ActualFeed_day_g","DeadWeight_g",
+                      "Dead_Count","DeadWeight_kg","Feed_kg","Biomass_start_kg","Biomass_kg",
+                      "Weight_Gain_kg","ADG (g/day)","Survival %","FCR","Avg pH","Avg Salinity"]
+
+    total_gain = tank_df['Weight_Gain_kg'].sum()
+    ov_fcr = round(tank_df['Feed_kg'].sum() / total_gain, 2) if total_gain > 0 else 0
+
+    # Map values based on full_metric_list
+    all_cons_vals = {
+        "ABW_start": round(tank_df['ABW_start'].mean(), 2),
+        "ABW_end": round(tank_df['ABW_end'].mean(), 2),
+        "Weekly_Gain": round(tank_df['Weekly_Gain'].mean(), 3),
+        "InitialCount": tank_df['InitialCount'].sum(),
+        "LiveCount": tank_df['LiveCount'].sum(),
+        "ActualFeed_day_g": tank_df['ActualFeed_day_g'].sum(),
+        "DeadWeight_g": tank_df['DeadWeight_g'].sum(),
+        "Dead_Count": tank_df['Dead_Count'].sum(),
+        "DeadWeight_kg": round(tank_df['DeadWeight_g'].sum()/1000, 2),
+        "Feed_kg": round(tank_df['Feed_kg'].sum(), 2),
+        "Biomass_start_kg": round(tank_df['Biomass_start_kg'].sum(), 2),
+        "Biomass_kg": round(tank_df['Biomass_kg'].sum(), 2),
+        "Weight_Gain_kg": round(tank_df['Weight_Gain_kg'].sum(), 2),
+        "ADG (g/day)": round(tank_df['ADG (g/day)'].mean(), 3),
+        "Survival %": round(tank_df['Survival_%'].mean(), 2),
+        "FCR": ov_fcr,
+        "Avg pH": round(tank_df['pH'].mean(), 2),
+        "Avg Salinity": round(tank_df['Salinity'].mean(), 1)
+    }
+
+    # Generate Actual, Target, and Status lists ONLY for display_p_list
+    cons_vals = [all_cons_vals[m] for m in display_p_list]
     
-    # -----------------------------
-    # 4. FARM CONSOLIDATED REPORT
-    # -----------------------------
-    p_list = ["ABW_start","ABW_end","Weekly_Gain","InitialCount","LiveCount","ActualFeed_day_g","DeadWeight_g","Dead_Count","DeadWeight_kg","Feed_kg","Biomass_start_kg","Biomass_kg","Weight_Gain_kg","ADG (g/day)","Survival %","FCR","Avg pH","Avg Salinity"]
-    ov_fcr = round(tank_df['Feed_kg'].sum()/tank_df['Weight_Gain_kg'].sum(),2) if tank_df['Weight_Gain_kg'].sum()>0 else 0
-    cons_vals = [
-        round(tank_df['ABW_start'].mean(),2), round(tank_df['ABW_end'].mean(),2), round(tank_df['Weekly_Gain'].mean(),3),
-        tank_df['InitialCount'].sum(), tank_df['LiveCount'].sum(),
-        tank_df['ActualFeed_day_g'].sum(), tank_df['DeadWeight_g'].sum().round(2), tank_df['Dead_Count'].sum(), round(tank_df['DeadWeight_g'].sum()/1000,2),
-        round(tank_df['Feed_kg'].sum(),2), round(tank_df['Biomass_start_kg'].sum(),2), round(tank_df['Biomass_kg'].sum(),2), round(tank_df['Weight_Gain_kg'].sum(),2),
-        round(tank_df['ADG (g/day)'].mean(),3), round(tank_df['Survival_%'].mean(),2), ov_fcr, round(tank_df['pH'].mean(),2), round(tank_df['Salinity'].mean(),1)
+    # Targets for displayed metrics
+    target_map = {
+        "ABW_end": current_target_abw, "Survival %": TARGET_SURVIVAL_MIN, 
+        "FCR": TARGET_FCR_MAX, "Avg pH": f"{PH_MIN}-{PH_MAX}", "Avg Salinity": f"{SALINITY_MIN}-{SALINITY_MAX}"
+    }
+    target_vals = [target_map.get(m, "-") for m in display_p_list]
+
+    status_vals = [
+        "YES" if m == "ABW_end" and all_cons_vals[m] >= current_target_abw else
+        "YES" if m == "Survival %" and all_cons_vals[m] >= TARGET_SURVIVAL_MIN else
+        "YES" if m == "FCR" and all_cons_vals[m] <= TARGET_FCR_MAX else
+        "YES" if m == "Avg pH" and PH_MIN <= all_cons_vals[m] <= PH_MAX else
+        "YES" if m == "Avg Salinity" and SALINITY_MIN <= all_cons_vals[m] <= SALINITY_MAX else
+        "NO" if m in target_map else "-"
+        for m in display_p_list
     ]
-    consolidated_v = pd.DataFrame({"Metric":p_list,"Actual":cons_vals,
-        "Target":["-",current_target_abw,"-","-","-","-","-","-","-","-","-","-","-",
-                  "-",
-                  TARGET_SURVIVAL_MIN,TARGET_FCR_MAX,f"{PH_MIN}-{PH_MAX}",f"{SALINITY_MIN}-{SALINITY_MAX}"],
-        "Status":["-","YES" if tank_df['ABW_end'].mean()>=current_target_abw else "NO","-","-","-","-","-","-","-","-","-","-","-",
-                  "-",
-                  "YES" if tank_df['Survival_%'].mean()>=TARGET_SURVIVAL_MIN else "NO",
-                  "YES" if ov_fcr<=TARGET_FCR_MAX else "NO",
-                  "YES" if PH_MIN<=tank_df['pH'].mean()<=PH_MAX else "NO",
-                  "YES" if SALINITY_MIN<=tank_df['Salinity'].mean()<=SALINITY_MAX else "NO"]
-    }).set_index("Metric")
-    
+
+    consolidated_v = pd.DataFrame({"Metric": display_p_list, "Actual": cons_vals, "Target": target_vals, "Status": status_vals}).set_index("Metric")
+
     # -----------------------------
-    # 5. WORKER SUMMARY (Updated with Weekly Gain)
+    # 5. WORKER SUMMARY (Hidden Counts)
     # -----------------------------
     worker_raw = tank_df.groupby('Worker').agg({
         'ABW_start':'mean','ABW_end':'mean','Weekly_Gain':'mean',
-        'InitialCount':'sum','LiveCount':'sum',
-        'ActualFeed_day_g':'sum','DeadWeight_g':'sum','Dead_Count':'sum',
-        'Feed_kg':'sum','Biomass_start_kg':'sum','Biomass_kg':'sum',
-        'Weight_Gain_kg':'sum','ADG (g/day)':'mean','Survival_%':'mean','pH':'mean','Salinity':'mean'
+        'InitialCount':'sum', 'LiveCount':'sum', 'ActualFeed_day_g':'sum',
+        'DeadWeight_g':'sum','Dead_Count':'sum','Feed_kg':'sum','Biomass_start_kg':'sum',
+        'Biomass_kg':'sum','Weight_Gain_kg':'sum','ADG (g/day)':'mean','Survival_%':'mean','pH':'mean','Salinity':'mean'
     }).reset_index()
 
-    w_dfs=[]
+    w_dfs = []
     for _, row in worker_raw.iterrows():
-        wfcr = round(row['Feed_kg']/row['Weight_Gain_kg'],2) if row['Weight_Gain_kg']>0 else 0
-        wvals = [
-            round(row['ABW_start'],2), round(row['ABW_end'],2), round(row['Weekly_Gain'],3),
-            row['InitialCount'], row['LiveCount'],
-            round(row['ActualFeed_day_g'],1), round(row['DeadWeight_g'],1), row['Dead_Count'],
-            round(row['DeadWeight_g']/1000,2), round(row['Feed_kg'],2), round(row['Biomass_start_kg'],2),
-            round(row['Biomass_kg'],2), round(row['Weight_Gain_kg'],2), round(row['ADG (g/day)'],3),
-            round(row['Survival_%'],2), wfcr, round(row['pH'],2), round(row['Salinity'],1)
+        wfcr = round(row['Feed_kg']/row['Weight_Gain_kg'], 2) if row['Weight_Gain_kg'] > 0 else 0
+        
+        # Build worker values for display_p_list
+        w_all_vals = {
+            "ABW_start": round(row['ABW_start'], 2), "ABW_end": round(row['ABW_end'], 2),
+            "Weekly_Gain": round(row['Weekly_Gain'], 3), "ActualFeed_day_g": round(row['ActualFeed_day_g'], 1),
+            "DeadWeight_g": round(row['DeadWeight_g'], 1), "Dead_Count": row['Dead_Count'],
+            "DeadWeight_kg": round(row['DeadWeight_g']/1000, 2), "Feed_kg": round(row['Feed_kg'], 2),
+            "Biomass_start_kg": round(row['Biomass_start_kg'], 2), "Biomass_kg": round(row['Biomass_kg'], 2),
+            "Weight_Gain_kg": round(row['Weight_Gain_kg'], 2), "ADG (g/day)": round(row['ADG (g/day)'], 3),
+            "Survival %": round(row['Survival_%'], 2), "FCR": wfcr, "Avg pH": round(row['pH'], 2), "Avg Salinity": round(row['Salinity'], 1)
+        }
+        
+        wvals = [w_all_vals[m] for m in display_p_list]
+        wstat = [
+            "YES" if m == "ABW_end" and w_all_vals[m] >= current_target_abw else
+            "YES" if m == "Survival %" and w_all_vals[m] >= TARGET_SURVIVAL_MIN else
+            "YES" if m == "FCR" and w_all_vals[m] <= TARGET_FCR_MAX else
+            "YES" if m == "Avg pH" and PH_MIN <= w_all_vals[m] <= PH_MAX else
+            "YES" if m == "Avg Salinity" and SALINITY_MIN <= w_all_vals[m] <= SALINITY_MAX else
+            "NO" if m in target_map else "-"
+            for m in display_p_list
         ]
-        wtgt = ["-", current_target_abw, "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", TARGET_SURVIVAL_MIN, TARGET_FCR_MAX, f"{PH_MIN}-{PH_MAX}", f"{SALINITY_MIN}-{SALINITY_MAX}"]
-        wstat = ["-","YES" if row['ABW_end']>=current_target_abw else "NO","-","-","-","-","-","-","-","-","-","-","-",
-                 "-",
-                 "YES" if row['Survival_%']>=TARGET_SURVIVAL_MIN else "NO",
-                 "YES" if wfcr<=TARGET_FCR_MAX else "NO",
-                 "YES" if PH_MIN<=row['pH']<=PH_MAX else "NO",
-                 "YES" if SALINITY_MIN<=row['Salinity']<=SALINITY_MAX else "NO"]
-        w_dfs.append(pd.DataFrame({"Metric":p_list,
-                                   f"{row['Worker']} Act":wvals,
-                                   f"{row['Worker']} Tgt":wtgt,
-                                   f"{row['Worker']} Stat":wstat}).set_index("Metric"))
+        
+        w_dfs.append(pd.DataFrame({"Metric": display_p_list, f"{row['Worker']} Act": wvals, f"{row['Worker']} Stat": wstat}).set_index("Metric"))
 
     worker_v = pd.concat(w_dfs, axis=1)
-    
+
     # -----------------------------
     # 6. DASHBOARD DISPLAY
     # -----------------------------
@@ -1424,9 +1446,12 @@ if 'view_df' in globals() and not abw_df.empty:
     st.table(consolidated_v)
     st.subheader("Worker Summary")
     st.table(worker_v)
-    st.subheader("Detailed Tank Scorecard")
-    st.dataframe(tank_df, use_container_width=True)
     
+    # Detailed Tank view - we also drop the columns here for visual consistency
+    st.subheader("Detailed Tank Scorecard")
+    st.dataframe(tank_df.drop(columns=['InitialCount', 'LiveCount']), use_container_width=True)
+
+   
     # -----------------------------
     # 7. EXCEL EXPORT
     # -----------------------------
