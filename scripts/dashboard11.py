@@ -29,7 +29,7 @@ st_autorefresh(interval=30 * 1000, key="datarefresh")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Relative path to the tank summary report folder
-WATCH_FOLDER = os.path.normpath(os.path.join(BASE_DIR, "..", "tank_summary_report"))
+WATCH_FOLDER = os.path.normpath(os.path.join(BASE_DIR, "..", "Tank_Consolidated_Report"))
 
 # Ensure the folder exists
 if not os.path.exists(WATCH_FOLDER):
