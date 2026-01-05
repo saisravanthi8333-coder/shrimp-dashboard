@@ -25,52 +25,50 @@ st_autorefresh(interval=30 * 1000, key="datarefresh")
 # 2️⃣ Folder to watch
 # ---------------------------
 
-# Base folder of this script
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Relative path to the tank summary report folder
+# ---------------------------
+# 2️⃣ Folder to watch (GitHub-safe)
+# ---------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # folder of this script
 WATCH_FOLDER = os.path.normpath(os.path.join(BASE_DIR, "..", "Tank_Consolidated_Report"))
 
-# Ensure the folder exists
 if not os.path.exists(WATCH_FOLDER):
-    st.error(f"Tank summary folder not found: {WATCH_FOLDER}")
-    st.stop()
+    os.makedirs(WATCH_FOLDER)
+    st.info(f"Folder created: {WATCH_FOLDER}")
 
-# Streamlit session state to hold the latest file
-if 'latest_file' not in st.session_state:
-    st.session_state.latest_file = None
+st.write(f"Watching folder: {WATCH_FOLDER}")
 
 # ---------------------------
-# 5️⃣ Load latest tank summary
+# Find the latest tank summary file
 # ---------------------------
 def get_latest_file(folder):
     """Return the latest Excel file in the folder or None if empty."""
-    excel_files = [f for f in os.listdir(folder) if f.endswith(".xlsx")]
+    excel_files = glob(os.path.join(folder, "Tank_Consolidated_Report_*.xlsx"))
     if not excel_files:
         return None
-    latest = max(excel_files, key=lambda f: os.path.getctime(os.path.join(folder, f)))
-    return os.path.join(folder, latest)
+    latest = max(excel_files, key=os.path.getmtime)
+    return latest
 
-# Load the latest file
-if st.session_state.latest_file is None:
-    latest_file = get_latest_file(WATCH_FOLDER)
-    if latest_file is None:
-        st.warning("No tank summary files found yet. Waiting for a new file...")
-        st.stop()
-    st.session_state.latest_file = latest_file
-else:
-    latest_file = st.session_state.latest_file
+# Use session_state to store the latest file
+if 'latest_file' not in st.session_state:
+    st.session_state.latest_file = get_latest_file(WATCH_FOLDER)
 
-# Read the Excel file into a DataFrame
+latest_file = st.session_state.latest_file
+
+if latest_file is None:
+    st.warning("No tank summary files found yet. Waiting for a new file...")
+    st.stop()
+
+# ---------------------------
+# Load the latest Excel file
+# ---------------------------
 try:
     df = pd.read_excel(latest_file)
 except Exception as e:
     st.error(f"Failed to load Excel file: {latest_file}\nError: {e}")
     st.stop()
 
-# Optional: show the loaded file name in the dashboard
-#st.write(f"✅ Loaded file: {os.path.basename(latest_file)}")
-
+# Optional: show loaded file name
+st.write(f"✅ Loaded file: {os.path.basename(latest_file)}")
 
 # Example: show dataframe
 #st.dataframe(df)
