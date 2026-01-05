@@ -735,7 +735,7 @@ def get_salinity_score(val):
 
 def get_ph_score(val):
     if 7.6 <= val <= 8.3:return 100  # Ideal
-    elif 7.8 <= val <= 7.6 or 8.3 <= val <= 8.5:return 80   # Acceptable
+    elif 7.4 <= val <= 7.6 or 8.3 <= val <= 8.5:return 80   # Acceptable
     else: return 50   # Danger    
 
 view_df['SalinityScore'] = view_df['Salinity'].apply(get_salinity_score)
@@ -911,7 +911,7 @@ if not view_df.empty:
     def color_salinity(val):
         if val < 25 or val > 30:
             return "background-color: #FF0000"
-        elif val < 26 or val > 29:
+        elif val < 25 or val > 29:
             return "background-color: #FF8000"
         return ""
 
@@ -1261,7 +1261,7 @@ SALINITY_MIN, SALINITY_MAX = 25, 30
 
 def get_target_weight(days):
     if days <= 30: return 2.0
-    if days <= 60: return 7.6
+    if days <= 60: return 8.0
     return 15.0
 
 def assign_worker(block):
