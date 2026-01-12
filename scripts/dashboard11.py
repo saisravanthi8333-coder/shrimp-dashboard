@@ -142,22 +142,6 @@ elif view_option == "Monthly":
     month_options = sorted(df['Month'].astype(str).unique())
     selected_month = st.sidebar.selectbox("Select Month", month_options)
 
-# ----------------------------
-# Assign workers dynamically based on block
-# ----------------------------
-# Extract block letter E-J
-df['Block_Letter'] = df['Block'].astype(str).str.upper().str.extract(r'([E-J])', expand=False)
-
-# Map blocks to workers
-block_worker_map = {
-    'E': 'Jimmy', 'F': 'Jimmy', 'G': 'Jimmy',
-    'H': 'Flora', 'I': 'Flora', 'J': 'Flora'
-}
-
-# Replace WorkerName based on block
-df['WorkerName'] = df['Block_Letter'].map(block_worker_map).fillna('Others')
-
-
 # =============================
 # 3️⃣ FILTER DATA
 # =============================
@@ -191,15 +175,34 @@ if view_option == "Daily":
     view_df['ScheduledFeed_day_kg'] = (view_df['ScheduledFeed_day_g'] / 1000).round(2)
     view_df['LeftoverFeed_g'] = view_df['ScheduledFeed_day_g'] - view_df['ActualFeed_day_g']
     view_df['LeftoverFeed_kg'] = (view_df['LeftoverFeed_g'] / 1000).round(2)
+    # Get first day per batch
+    
+    min_date = view_df['Date'].min()
+    first_day_records = view_df[view_df['Date'] == min_date]
+    total_initial = first_day_records.groupby('Batch ID')['InitialCount'].sum().sum()
+    total_dead = view_df['DeadCount_day'].sum()
 
+# 3. Calculation
+    if total_initial > 0:
+        mortality_pct = round((total_dead / total_initial) * 100, 2)
+    else:
+        mortality_pct = 0.0
+
+# DEBUG PRINT (Optional - remove once fixed)
+    st.write(f"Total Dead: {total_dead} | Total Initial: {total_initial}")
+
+# Mortality %
+    mortality_pct = round((total_dead / total_initial) * 100, 2) if total_initial > 0 else 0
+
+    
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     if not view_df.empty:
         col1.metric("Feed (g)", round(view_df['ActualFeed_day_g'].sum(), 2))
         col2.metric("Feed (kg)", round(view_df['ActualFeed_day_kg'].sum(), 2))
         col3.metric("Leftover Feed (g)", round(view_df['LeftoverFeed_g'].sum(), 2))
         col4.metric("Leftover Feed (kg)", round(view_df['LeftoverFeed_kg'].sum(), 2))
-        col5.metric("Mortality %", round(view_df['Mortality_pct'].mean() * 100, 2) if 'Mortality_pct' in view_df.columns else 0)
-        col6.metric("DeadCount", int(view_df['DeadCount_day'].sum()))
+        col5.metric("Mortality %", mortality_pct)
+        col6.metric("Dead Count", int(total_dead))
     else:
         for c in [col1, col2, col3, col4, col5, col6]:
             c.metric("No Data","No Data")
@@ -382,14 +385,28 @@ if view_option == "Weekly":
     weekly_df['LeftoverFeed_g'] = weekly_df['ScheduledFeed_day_g'] - weekly_df['ActualFeed_day_g']
     weekly_df['LeftoverFeed_kg'] = (weekly_df['LeftoverFeed_g'] / 1000).round(2)
 
+    total_dead_weekly = weekly_df['DeadCount_day'].sum()
+    active_batches = weekly_df['Batch ID'].unique()
+    batch_start_data = view_df[view_df['Batch ID'].isin(active_batches)]
+    absolute_min_date = batch_start_data['Date'].min()
+
+    first_day_records = batch_start_data[batch_start_data['Date'] == absolute_min_date]
+    total_initial_weekly = first_day_records.groupby('Batch ID')['InitialCount'].sum().sum()
+
+    if total_initial_weekly > 0:
+        mortality_pct_weekly = round((total_dead_weekly / total_initial_weekly) * 100, 2)
+    else:
+        mortality_pct_weekly = 0.0
+    # DEBUG: Use this to see if the numbers match your expectations
+    st.write(f"DEBUG: Deaths={total_dead_weekly}, Initial={total_initial_weekly}")
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     if not weekly_df.empty:
         col1.metric("Feed (g)", round(weekly_df['ActualFeed_day_g'].sum(), 2))
         col2.metric("Feed (kg)", round(weekly_df['ActualFeed_day_kg'].sum(), 2))
         col3.metric("Leftover Feed (g)", round(weekly_df['LeftoverFeed_g'].sum(), 2))
         col4.metric("Leftover Feed (kg)", round(weekly_df['LeftoverFeed_kg'].sum(), 2))
-        col5.metric("Mortality %", round(weekly_df['Mortality_pct'].mean() * 100, 2) if 'Mortality_pct' in weekly_df.columns else 0)
-        col6.metric("DeadCount", int(weekly_df['DeadCount_day'].sum()))
+        col5.metric("Mortality %", mortality_pct_weekly)
+        col6.metric("DeadCount", int(total_dead_weekly))
     else:
         for c in [col1, col2, col3, col4, col5, col6]:
             c.metric("No Data","No Data")
@@ -574,7 +591,7 @@ if view_option == "Monthly":
     monthly_df['ScheduledFeed_kg'] = (monthly_df['ScheduledFeed_g']/1000).round(2)
     monthly_df['ActualFeed_kg'] = (monthly_df['ActualFeed_g']/1000).round(2)
     monthly_df['Leftover_kg'] = (monthly_df['LeftoverFeed_g']/1000).round(2)
-
+    
     # Metrics summary
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     if not monthly_df.empty:
@@ -744,45 +761,56 @@ view_df['OverallPerformance_pct'] = view_df[['Survival_pct','FeedEfficiency_pct'
 
 
 # -------------------------------
-# Performance Table based on sidebar View Mode
+# Block & Tank Performance Summary
 # -------------------------------
+
+view_df['pH_OK'] = view_df['pH'].between(7.6, 8.3).astype(int)
+view_df['Salinity_OK'] = view_df['Salinity'].between(25, 30).astype(int)
+
+# -------------------------------
+# Block & Tank Performance Summary
+# -------------------------------
+agg_dict = {
+    'Survival_pct': 'mean',
+    'Mortality_pct': 'mean',
+    'FeedEfficiency_pct': 'mean',
+    'pH_%': lambda x: round((x.sum()/len(x))*100, 1),
+    'Salinity_%': lambda x: round((x.sum()/len(x))*100, 1),
+    'OverallPerformance_pct': 'mean'
+}
+
+# Add placeholder for aggregation
+view_df['pH_%'] = view_df['pH_OK']
+view_df['Salinity_%'] = view_df['Salinity_OK']
+
 if view_option == "Daily":
-    performance_table = view_df[['Date','Block','Tank','WorkerName','Survival_pct','Mortality_pct',
-                                 'FeedEfficiency_pct','SalinityScore','PHScore','OverallPerformance_pct']]
+    performance_table = view_df.groupby(['Date','Block','Tank'], as_index=False).agg(agg_dict)
 
 elif view_option == "Weekly":
     view_df['WeekRange'] = view_df['Date'] - pd.to_timedelta(view_df['Date'].dt.dayofweek, unit='d')
     view_df['WeekRangeEnd'] = view_df['WeekRange'] + pd.Timedelta(days=6)
     view_df['Week'] = view_df['WeekRange'].dt.date.astype(str) + " to " + view_df['WeekRangeEnd'].dt.date.astype(str)
-    
-    performance_table = view_df.groupby(['Week','Block','Tank'], as_index=False).agg(
-        Survival_pct=('Survival_pct','mean'),
-        Mortality_pct=('Mortality_pct','mean'),
-        FeedEfficiency_pct=('FeedEfficiency_pct','mean'),
-        SalinityScore=('SalinityScore','mean'),
-        PHScore=('PHScore','mean'),
-        OverallPerformance_pct=('OverallPerformance_pct','mean')
-    ).round(2)
-    
-    workers = view_df.groupby(['Week','Block','Tank'])['WorkerName'].unique().apply(lambda x: ', '.join(x))
-    performance_table['Workers'] = performance_table.set_index(['Week','Block','Tank']).index.map(workers).values
-    performance_table = performance_table.sort_values(by='OverallPerformance_pct', ascending=False)
+    performance_table = view_df.groupby(['Week','Block','Tank'], as_index=False).agg(agg_dict)
 
 elif view_option == "Monthly":
     view_df['Month'] = view_df['Date'].dt.to_period('M').astype(str)
-    
-    performance_table = view_df.groupby(['Month','Block','Tank'], as_index=False).agg(
-        Survival_pct=('Survival_pct','mean'),
-        Mortality_pct=('Mortality_pct','mean'),
-        FeedEfficiency_pct=('FeedEfficiency_pct','mean'),
-        SalinityScore=('SalinityScore','mean'),
-        PHScore=('PHScore','mean'),
-        OverallPerformance_pct=('OverallPerformance_pct','mean')
-    ).round(2)
-    
+    performance_table = view_df.groupby(['Month','Block','Tank'], as_index=False).agg(agg_dict)
+
+# -------------------------------
+# Add Workers
+# -------------------------------
+if view_option == "Daily":
+    workers = view_df.groupby(['Date','Block','Tank'])['WorkerName'].unique().apply(lambda x: ', '.join(x))
+    performance_table['Workers'] = performance_table.set_index(['Date','Block','Tank']).index.map(workers).values
+elif view_option == "Weekly":
+    workers = view_df.groupby(['Week','Block','Tank'])['WorkerName'].unique().apply(lambda x: ', '.join(x))
+    performance_table['Workers'] = performance_table.set_index(['Week','Block','Tank']).index.map(workers).values
+elif view_option == "Monthly":
     workers = view_df.groupby(['Month','Block','Tank'])['WorkerName'].unique().apply(lambda x: ', '.join(x))
     performance_table['Workers'] = performance_table.set_index(['Month','Block','Tank']).index.map(workers).values
-    performance_table = performance_table.sort_values(by='OverallPerformance_pct', ascending=False)
+
+# Sort table
+performance_table = performance_table.sort_values(by='OverallPerformance_pct', ascending=False)
 
 st.subheader("Block & Tank Performance Summary")
 st.dataframe(performance_table)
@@ -1248,6 +1276,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import os
 from io import BytesIO
 from fpdf import FPDF
 
@@ -1272,46 +1301,73 @@ def assign_worker(block):
     if b[0] in Flora_blocks: return "Flora"
     elif b[0] in jimmy_blocks: return "Jimmy"
     else: return "Other"
+    
 
 # -----------------------------
-# 2. DATA LOADING & FILTERING
+# 2. DATA LOADING & AUTOMATIC ABW LOGIC
 # -----------------------------
 st.set_page_config(page_title="Shrimp Farm Hub", layout="wide")
 st.title("🦐 Shrimp Farm Performance Scorecard")
 
-
-# -----------------------------
-# 1️⃣ Load ABW dynamically from repo
-# -----------------------------
 abw_df = pd.DataFrame()
+abw_file = r"C:\Users\123\Desktop\PJSite_Dashboard\data\daily_reports\ABW\AvgBW.xlsx"
+
 try:
-    base_dir = os.path.dirname(__file__)  # current folder: scripts/
-    abw_file_repo = os.path.join(base_dir, "../ABW.xlsx")  # adjust relative path if needed
-    abw_df = pd.read_excel(abw_file_repo)
-    
-    # Clean columns
+    if not os.path.exists(abw_file):
+        st.error(f"ABW File not found: {abw_file}")
+        st.stop()
+        
+    abw_df = pd.read_excel(abw_file)
     abw_df.columns = abw_df.columns.str.strip()
+    
+    # Standardize types
     abw_df['Block'] = abw_df['Block'].astype(str).str.strip().str.upper()
     abw_df['Tank'] = abw_df['Tank'].astype(str).str.strip().str.upper()
-    abw_df['ABW_start'] = pd.to_numeric(
-        abw_df['ABW_start'].astype(str).str.replace('g','',regex=False), errors='coerce')
-    abw_df['ABW_end'] = pd.to_numeric(
-        abw_df['ABW_end'].astype(str).str.replace('g','',regex=False), errors='coerce')
+    abw_df['Date'] = pd.to_datetime(abw_df['Date'])
     
+    # 1️⃣ CLEAN Avg Weight ONLY
+    if 'Avg Weight' in abw_df.columns:
+        abw_df['Avg Weight'] = pd.to_numeric(
+            abw_df['Avg Weight'].astype(str).str.replace('g','',regex=False).replace('no shrimp','0'),
+            errors='coerce'
+        )
+
+# -----------------------------
+# 2️⃣ AUTOMATIC LOOK-BACK (Finding Start and End weights from Avg Weight only)
+# -----------------------------
+    abw_df = abw_df.sort_values(['Tank', 'Block', 'Date'])
+
+# ABW_end = current date's Avg Weight
+    abw_df['ABW_end'] = abw_df['Avg Weight']
+
+# ABW_start = previous date's Avg Weight (per Tank/Block)
+    abw_df['ABW_start'] = abw_df.groupby(['Tank','Block'])['Avg Weight'].shift(1)
+
+# CV_pct (if S/M/L weights exist)
+    if all(x in abw_df.columns for x in ['S-Weight','M-Weight','L-Weight']):
+        for col in ['S-Weight', 'M-Weight', 'L-Weight']:
+            abw_df[col] = pd.to_numeric(
+                abw_df[col].astype(str).str.replace('g','',regex=False).replace('no shrimp','0'),
+                errors='coerce'
+            )
+        abw_df['Est_SD'] = (abw_df['L-Weight'] - abw_df['S-Weight']) / 4
+        abw_df['CV_pct'] = (abw_df['Est_SD'] / abw_df['ABW_end'] * 100).fillna(0)
+    else:
+        abw_df['CV_pct'] = 0
+
 except Exception as e:
     st.error(f"ABW Excel Load Error: {e}")
     st.stop()
 
-# -----------------------------
-# 2️⃣ Date Input in sidebar
-# -----------------------------
+# Date Selectors
 c1, c2 = st.columns(2)
 with c1:
-    start_date = st.date_input("Start Date", value=datetime.today().date())
+    start_date = st.date_input("Start Date", value=abw_df['Date'].min() if not abw_df.empty else datetime.today())
 with c2:
-    end_date = st.date_input("End Date", value=datetime.today().date())
+    end_date = st.date_input("End Date", value=abw_df['Date'].max() if not abw_df.empty else datetime.today())
+
 # -----------------------------
-# 3. CORE PROCESSING
+# 3. CORE PROCESSING (Restored Original Logic)
 # -----------------------------
 if 'view_df' in globals() and not abw_df.empty:
     view_df['Block'] = view_df['Block'].str.strip().str.upper()
@@ -1326,6 +1382,7 @@ if 'view_df' in globals() and not abw_df.empty:
     days_elapsed = max((pd.to_datetime(end_date) - pd.to_datetime(start_date)).days, 1)
     current_target_abw = get_target_weight(days_elapsed)
 
+    # Filter daily logs
     filtered_df = view_df[(view_df['Date'] >= pd.to_datetime(start_date)) & 
                           (view_df['Date'] <= pd.to_datetime(end_date))].copy()
     
@@ -1333,12 +1390,25 @@ if 'view_df' in globals() and not abw_df.empty:
         st.warning("No data found for the selected date range.")
         st.stop()
 
-    merged_df = filtered_df.merge(abw_df[['Block','Tank','ABW_start','ABW_end']], on=['Block','Tank'], how='left')
+    # Filter the automated ABW values for the selected range
+    latest_abw = abw_df[(abw_df['Date'] >= pd.to_datetime(start_date)) & 
+                   (abw_df['Date'] <= pd.to_datetime(end_date))].copy()
+    latest_abw = latest_abw.sort_values(['Block', 'Tank', 'Date'])
 
-    # Aggregation (Still keeping counts in background for math)
+    abw_summary = latest_abw.groupby(['Block','Tank']).agg(
+        ABW_start=('Avg Weight', 'first'),
+        ABW_end=('Avg Weight', 'last'),
+        CV_pct=('CV_pct', 'last')
+    ).reset_index()
+
+    # MERGING (Your original logic, but including CV_pct for uneven growth)
+    merged_df = filtered_df.merge(latest_abw[['Block','Tank','ABW_start','ABW_end','CV_pct']], on=['Block','Tank'], how='left')
+
+    # Aggregation (Exactly as you requested)
     tank_df = merged_df.sort_values(['Block', 'Tank', 'Date']).groupby(['Block', 'Tank']).agg({
         'ABW_start': 'first',
         'ABW_end': 'last',
+        'CV_pct': 'last',
         'InitialCount': 'first',
         'LiveCount': 'last',
         'ActualFeed_day_g': 'sum',
@@ -1347,7 +1417,7 @@ if 'view_df' in globals() and not abw_df.empty:
         'Salinity': 'mean'
     }).reset_index()
 
-    # Tank Calculations
+    # --- YOUR ORIGINAL TANK CALCULATIONS ---
     tank_df['Dead_Count'] = tank_df['InitialCount'] - tank_df['LiveCount']
     tank_df['Feed_kg'] = (tank_df['ActualFeed_day_g']/1000).round(2)
     tank_df['Biomass_start_kg'] = (tank_df['InitialCount'] * tank_df['ABW_start']/1000).round(2)
@@ -1359,16 +1429,24 @@ if 'view_df' in globals() and not abw_df.empty:
     tank_df['Worker'] = tank_df['Block'].apply(assign_worker)
     tank_df['FCR'] = np.where(tank_df['Weight_Gain_kg']>0, (tank_df['Feed_kg']/tank_df['Weight_Gain_kg']).round(2), 0)
 
+    # Uneven Growth Logic Label
+    def get_growth_status(cv):
+        if pd.isna(cv) or cv == 0:
+            return "–"          # No data / missing
+        elif cv > 25:
+            return "🚨 Uneven"  # High variation
+        else:
+            return "✅ Uniform" # Low variation
+    tank_df['Growth_Status'] = tank_df['CV_pct'].apply(get_growth_status)
+
     # -----------------------------
     # 4. FARM CONSOLIDATED REPORT (Hidden Counts)
     # -----------------------------
-    # We keep InitialCount and LiveCount in the DATA but remove them from p_list
     full_metric_list = ["ABW_start","ABW_end","Weekly_Gain","InitialCount","LiveCount",
                         "ActualFeed_day_g","DeadWeight_g","Dead_Count","DeadWeight_kg","Feed_kg",
                         "Biomass_start_kg","Biomass_kg","Weight_Gain_kg","ADG (g/day)","Survival %",
                         "FCR","Avg pH","Avg Salinity"]
 
-    # This is the list that controls the DISPLAY - Initial/Live counts are removed here
     display_p_list = ["ABW_start","ABW_end","Weekly_Gain","ActualFeed_day_g","DeadWeight_g",
                       "Dead_Count","DeadWeight_kg","Feed_kg","Biomass_start_kg","Biomass_kg",
                       "Weight_Gain_kg","ADG (g/day)","Survival %","FCR","Avg pH","Avg Salinity"]
@@ -1376,7 +1454,6 @@ if 'view_df' in globals() and not abw_df.empty:
     total_gain = tank_df['Weight_Gain_kg'].sum()
     ov_fcr = round(tank_df['Feed_kg'].sum() / total_gain, 2) if total_gain > 0 else 0
 
-    # Map values based on full_metric_list
     all_cons_vals = {
         "ABW_start": round(tank_df['ABW_start'].mean(), 2),
         "ABW_end": round(tank_df['ABW_end'].mean(), 2),
@@ -1398,10 +1475,8 @@ if 'view_df' in globals() and not abw_df.empty:
         "Avg Salinity": round(tank_df['Salinity'].mean(), 1)
     }
 
-    # Generate Actual, Target, and Status lists ONLY for display_p_list
     cons_vals = [all_cons_vals[m] for m in display_p_list]
     
-    # Targets for displayed metrics
     target_map = {
         "ABW_end": current_target_abw, "Survival %": TARGET_SURVIVAL_MIN, 
         "FCR": TARGET_FCR_MAX, "Avg pH": f"{PH_MIN}-{PH_MAX}", "Avg Salinity": f"{SALINITY_MIN}-{SALINITY_MAX}"
@@ -1434,7 +1509,6 @@ if 'view_df' in globals() and not abw_df.empty:
     for _, row in worker_raw.iterrows():
         wfcr = round(row['Feed_kg']/row['Weight_Gain_kg'], 2) if row['Weight_Gain_kg'] > 0 else 0
         
-        # Build worker values for display_p_list
         w_all_vals = {
             "ABW_start": round(row['ABW_start'], 2), "ABW_end": round(row['ABW_end'], 2),
             "Weekly_Gain": round(row['Weekly_Gain'], 3), "ActualFeed_day_g": round(row['ActualFeed_day_g'], 1),
@@ -1459,6 +1533,7 @@ if 'view_df' in globals() and not abw_df.empty:
         w_dfs.append(pd.DataFrame({"Metric": display_p_list, f"{row['Worker']} Act": wvals, f"{row['Worker']} Stat": wstat}).set_index("Metric"))
 
     worker_v = pd.concat(w_dfs, axis=1)
+
 
     # -----------------------------
     # 6. DASHBOARD DISPLAY
