@@ -1310,6 +1310,9 @@ st.set_page_config(page_title="Shrimp Farm Hub", layout="wide")
 st.title("🦐 Shrimp Farm Performance Scorecard")
 
 abw_url = "https://raw.githubusercontent.com/saisravanthi8333-coder/shrimp-dashboard/main/AvgBW.xlsx"
+abw_df = pd.read_excel(abw_url)
+abw_df.columns = abw_df.columns.str.strip()
+st.write("Columns in ABW:", abw_df.columns.tolist())
 
 try:
     # Load Excel directly from URL
