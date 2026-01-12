@@ -1310,7 +1310,7 @@ st.set_page_config(page_title="Shrimp Farm Hub", layout="wide")
 st.title("🦐 Shrimp Farm Performance Scorecard")
 
 abw_df = pd.DataFrame()
-abw_file = r"C:\Users\123\Desktop\PJSite_Dashboard\data\daily_reports\ABW\AvgBW.xlsx"
+abw_file = r"https://github.com/saisravanthi8333-coder/shrimp-dashboard/blob/main/AvgBW.xlsx"
 
 try:
     if not os.path.exists(abw_file):
