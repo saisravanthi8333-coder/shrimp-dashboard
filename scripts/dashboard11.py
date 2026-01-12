@@ -1309,13 +1309,11 @@ def assign_worker(block):
 st.set_page_config(page_title="Shrimp Farm Hub", layout="wide")
 st.title("🦐 Shrimp Farm Performance Scorecard")
 
+# ABW file URL
 abw_url = "https://raw.githubusercontent.com/saisravanthi8333-coder/shrimp-dashboard/main/AvgBW.xlsx"
-abw_df = pd.read_excel(abw_url)
-abw_df.columns = abw_df.columns.str.strip()
-st.write("Columns in ABW:", abw_df.columns.tolist())
 
 try:
-    # Load Excel directly from URL
+    # Load Excel directly from GitHub
     abw_df = pd.read_excel(abw_url)
     abw_df.columns = abw_df.columns.str.strip()
     
@@ -1332,6 +1330,22 @@ try:
                 .replace('no shrimp','0'),
             errors='coerce'
         )
+    
+    # Set ABW_end
+    abw_df['ABW_end'] = abw_df['Avg Weight']
+    
+    # ABW_start = previous day's Avg Weight per Tank/Block
+    abw_df['ABW_start'] = abw_df.groupby(['Tank','Block'])['Avg Weight'].shift(1)
+    
+    # CV_pct calculation
+    if all(x in abw_df.columns for x in ['S-Weight','M-Weight','L-Weight']):
+        for col in ['S-Weight','M-Weight','L-Weight']:
+            abw_df[col] = pd.to_numeric(abw_df[col], errors='coerce').fillna(0)
+        abw_df['Est_SD'] = (abw_df['L-Weight'] - abw_df['S-Weight']) / 4
+        abw_df['CV_pct'] = (abw_df['Est_SD'] / abw_df['ABW_end'] * 100).fillna(0)
+    else:
+        abw_df['CV_pct'] = 0
+
 except Exception as e:
     st.error(f"Failed to load ABW file from GitHub: {e}")
     st.stop()
