@@ -1331,26 +1331,7 @@ try:
             errors='coerce'
         )
     
-    # Set ABW_end
-    abw_df['ABW_end'] = abw_df['Avg Weight']
-    
-    # ABW_start = previous day's Avg Weight per Tank/Block
-    abw_df['ABW_start'] = abw_df.groupby(['Tank','Block'])['Avg Weight'].shift(1)
-    
-    # CV_pct calculation
-    if all(x in abw_df.columns for x in ['S-Weight','M-Weight','L-Weight']):
-        for col in ['S-Weight','M-Weight','L-Weight']:
-            abw_df[col] = pd.to_numeric(abw_df[col], errors='coerce').fillna(0)
-        abw_df['Est_SD'] = (abw_df['L-Weight'] - abw_df['S-Weight']) / 4
-        abw_df['CV_pct'] = (abw_df['Est_SD'] / abw_df['ABW_end'] * 100).fillna(0)
-    else:
-        abw_df['CV_pct'] = 0
-
-except Exception as e:
-    st.error(f"Failed to load ABW file from GitHub: {e}")
-    st.stop()
-
-# -----------------------------
+    # -----------------------------
 # 2️⃣ AUTOMATIC LOOK-BACK (Finding Start and End weights from Avg Weight only)
 # -----------------------------
     abw_df = abw_df.sort_values(['Tank', 'Block', 'Date'])
