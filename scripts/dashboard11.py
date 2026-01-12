@@ -1309,16 +1309,11 @@ def assign_worker(block):
 st.set_page_config(page_title="Shrimp Farm Hub", layout="wide")
 st.title("🦐 Shrimp Farm Performance Scorecard")
 
-abw_df = pd.DataFrame()
-abw_file = "https://raw.githubusercontent.com/saisravanthi8333-coder/shrimp-dashboard/main/AvgBW.xlsx"
-abw_df = pd.read_excel(abw_file)
+abw_url = "https://raw.githubusercontent.com/saisravanthi8333-coder/shrimp-dashboard/main/AvgBW.xlsx"
 
 try:
-    if not os.path.exists(abw_file):
-        st.error(f"ABW File not found: {abw_file}")
-        st.stop()
-        
-    abw_df = pd.read_excel(abw_file)
+    # Load Excel directly from URL
+    abw_df = pd.read_excel(abw_url)
     abw_df.columns = abw_df.columns.str.strip()
     
     # Standardize types
@@ -1326,12 +1321,17 @@ try:
     abw_df['Tank'] = abw_df['Tank'].astype(str).str.strip().str.upper()
     abw_df['Date'] = pd.to_datetime(abw_df['Date'])
     
-    # 1️⃣ CLEAN Avg Weight ONLY
+    # Clean Avg Weight
     if 'Avg Weight' in abw_df.columns:
         abw_df['Avg Weight'] = pd.to_numeric(
-            abw_df['Avg Weight'].astype(str).str.replace('g','',regex=False).replace('no shrimp','0'),
+            abw_df['Avg Weight'].astype(str)
+                .str.replace('g','',regex=False)
+                .replace('no shrimp','0'),
             errors='coerce'
         )
+except Exception as e:
+    st.error(f"Failed to load ABW file from GitHub: {e}")
+    st.stop()
 
 # -----------------------------
 # 2️⃣ AUTOMATIC LOOK-BACK (Finding Start and End weights from Avg Weight only)
