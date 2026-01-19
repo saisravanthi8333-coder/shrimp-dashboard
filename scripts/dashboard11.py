@@ -1331,7 +1331,7 @@ try:
             errors='coerce'
         )
     
-    # -----------------------------
+  # -----------------------------
 # 2️⃣ AUTOMATIC LOOK-BACK (Finding Start and End weights from Avg Weight only)
 # -----------------------------
     abw_df = abw_df.sort_values(['Tank', 'Block', 'Date'])
@@ -1340,7 +1340,9 @@ try:
     abw_df['ABW_end'] = abw_df['Avg Weight']
 
 # ABW_start = previous date's Avg Weight (per Tank/Block)
-    abw_df['ABW_start'] = abw_df.groupby(['Tank','Block'])['Avg Weight'].shift(1)
+    abw_df['ABW_start'] = abw_df.groupby(['Block', 'Tank'])['Avg Weight'].shift(1)
+    #abw_df['ABW_start'] = abw_df['ABW_start'].fillna(abw_df.groupby('Block')['Avg Weight'].shift(1))
+    
 
 # CV_pct (if S/M/L weights exist)
     if all(x in abw_df.columns for x in ['S-Weight','M-Weight','L-Weight']):
@@ -1401,7 +1403,8 @@ if 'view_df' in globals() and not abw_df.empty:
     ).reset_index()
 
     # MERGING (Your original logic, but including CV_pct for uneven growth)
-    merged_df = filtered_df.merge(latest_abw[['Block','Tank','ABW_start','ABW_end','CV_pct']], on=['Block','Tank'], how='left')
+    #merged_df = filtered_df.merge(latest_abw[['Block','Tank','ABW_start','ABW_end','CV_pct']], on=['Block','Tank'], how='left')
+    merged_df = filtered_df.merge(abw_summary, on=['Block','Tank'], how='left')
 
     # Aggregation (Exactly as you requested)
     tank_df = merged_df.sort_values(['Block', 'Tank', 'Date']).groupby(['Block', 'Tank']).agg({
@@ -1412,8 +1415,8 @@ if 'view_df' in globals() and not abw_df.empty:
         'LiveCount': 'last',
         'ActualFeed_day_g': 'sum',
         'DeadWeight_g': 'sum',
-        'pH': 'mean',
-        'Salinity': 'mean'
+        'pH': lambda x: round(x.mean(), 2),
+        'Salinity': lambda x: round(x.mean(), 1)
     }).reset_index()
 
     # --- YOUR ORIGINAL TANK CALCULATIONS ---
@@ -1426,7 +1429,7 @@ if 'view_df' in globals() and not abw_df.empty:
     tank_df['ADG (g/day)'] = (tank_df['Weekly_Gain'] / days_elapsed).round(3)
     tank_df['Survival_%'] = (tank_df['LiveCount'] / tank_df['InitialCount'].replace(0,1) * 100).round(2)
     tank_df['Worker'] = tank_df['Block'].apply(assign_worker)
-    tank_df['FCR'] = np.where(tank_df['Weight_Gain_kg']>0, (tank_df['Feed_kg']/tank_df['Weight_Gain_kg']).round(2), 0)
+    tank_df['FCR'] = np.where(tank_df['Weight_Gain_kg']>0, (tank_df['Feed_kg']/tank_df['Weight_Gain_kg']).round(2), np.nan)
 
     # Uneven Growth Logic Label
     def get_growth_status(cv):
